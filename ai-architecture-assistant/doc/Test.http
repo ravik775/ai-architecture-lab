@@ -1,0 +1,44 @@
+#Swagger Docymentation
+GET http://127.0.0.1:8000/docs
+
+###
+GET http://127.0.0.1:8000/
+
+###
+### Recommendation Ollama Provider Test Request
+POST http://127.0.0.1:8000/recommendation
+Content-Type: application/json
+Accept: application/json
+
+{
+  "business_requirement": "Build an eCommerce platform where users can browse products, place orders, pay online, and track delivery.",
+  "domain": "eCommerce",
+  "expected_users": 50000,
+  "provider": "ollama"
+}
+
+
+###
+# Expected Response
+#
+# HTTP/1.1 200 OK
+#
+# {
+#   "architecture_style": "Microservices",
+#   "key_components": [
+#      "API Gateway",
+#      "Product Service",
+#      "Order Service"
+#   ],
+#   "recommended_tech_stack": [
+#      "FastAPI",
+#      "PostgreSQL"
+#   ],
+#   "risks": [
+#      "Payment Failure"
+#   ],
+#   "clarifying_questions": [
+#      "Do you need multi-region deployment?"
+#   ],
+#   "summary": "..."
+# }

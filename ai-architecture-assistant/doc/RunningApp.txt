@@ -1,0 +1,3 @@
+pip3 install -r .\requirement.txt
+
+uvicorn app.main:app --reload

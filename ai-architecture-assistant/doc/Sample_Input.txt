@@ -1,0 +1,13 @@
+{
+  "business_requirement": "Build an eCommerce platform where users can browse products, place orders, pay online, and track delivery.",
+  "domain": "eCommerce",
+  "expected_users": 50000,
+  "provider": "openai"
+}
+
+{
+  "business_requirement": "Build an eCommerce platform where users can browse products, place orders, pay online, and track delivery.",
+  "domain": "eCommerce",
+  "expected_users": 50000,
+  "provider": "huggingface"
+}

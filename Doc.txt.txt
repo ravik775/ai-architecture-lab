@@ -1,0 +1,12 @@
+mkdir 01-fastapi-basics
+mkdir 02-pydantic
+mkdir 03-langchain
+mkdir 04-prompt-engineering
+mkdir 05-llm-providers
+mkdir 06-ai-agents
+mkdir 07-memory
+mkdir 08-rag
+mkdir 09-mcp
+mkdir 10-multi-agent
+mkdir 11-observability
+mkdir 12-production-deployment
