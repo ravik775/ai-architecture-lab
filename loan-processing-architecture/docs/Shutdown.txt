@@ -1,0 +1,4 @@
+wsl --shutdown
+wsl -l -v
+wsl --terminate Ubuntu
+wsl --shutdown  

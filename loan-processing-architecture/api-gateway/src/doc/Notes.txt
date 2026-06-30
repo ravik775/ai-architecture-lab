@@ -1,0 +1,192 @@
+http://localhost:9090/actuator/mappings
+his shows all registered Spring MVC mappings, including the Gateway router functions. It doesn't present them as neatly as the reactive Gateway's dedicated routes endpoint, but it's useful for verification.
+
+http://localhost:9090/actuator/circuitbreakers
+
+
+
+http://localhost:9090/actuator
+{
+  "_links": {
+    "self": {
+      "href": "http://localhost:9090/actuator",
+      "templated": false
+    },
+    "circuitbreakers": {
+      "href": "http://localhost:9090/actuator/circuitbreakers",
+      "templated": false
+    },
+    "circuitbreakers-name": {
+      "href": "http://localhost:9090/actuator/circuitbreakers/{name}",
+      "templated": true
+    },
+    "circuitbreakerevents-name-eventType": {
+      "href": "http://localhost:9090/actuator/circuitbreakerevents/{name}/{eventType}",
+      "templated": true
+    },
+    "circuitbreakerevents-name": {
+      "href": "http://localhost:9090/actuator/circuitbreakerevents/{name}",
+      "templated": true
+    },
+    "circuitbreakerevents": {
+      "href": "http://localhost:9090/actuator/circuitbreakerevents",
+      "templated": false
+    },
+    "timers": {
+      "href": "http://localhost:9090/actuator/timers",
+      "templated": false
+    },
+    "timerevents-name-eventType": {
+      "href": "http://localhost:9090/actuator/timerevents/{name}/{eventType}",
+      "templated": true
+    },
+    "timerevents": {
+      "href": "http://localhost:9090/actuator/timerevents",
+      "templated": false
+    },
+    "timerevents-name": {
+      "href": "http://localhost:9090/actuator/timerevents/{name}",
+      "templated": true
+    },
+    "ratelimiters": {
+      "href": "http://localhost:9090/actuator/ratelimiters",
+      "templated": false
+    },
+    "ratelimiterevents-name-eventType": {
+      "href": "http://localhost:9090/actuator/ratelimiterevents/{name}/{eventType}",
+      "templated": true
+    },
+    "ratelimiterevents": {
+      "href": "http://localhost:9090/actuator/ratelimiterevents",
+      "templated": false
+    },
+    "ratelimiterevents-name": {
+      "href": "http://localhost:9090/actuator/ratelimiterevents/{name}",
+      "templated": true
+    },
+    "retries": {
+      "href": "http://localhost:9090/actuator/retries",
+      "templated": false
+    },
+    "retryevents-name-eventType": {
+      "href": "http://localhost:9090/actuator/retryevents/{name}/{eventType}",
+      "templated": true
+    },
+    "retryevents": {
+      "href": "http://localhost:9090/actuator/retryevents",
+      "templated": false
+    },
+    "retryevents-name": {
+      "href": "http://localhost:9090/actuator/retryevents/{name}",
+      "templated": true
+    },
+    "timelimiters": {
+      "href": "http://localhost:9090/actuator/timelimiters",
+      "templated": false
+    },
+    "timelimiterevents-name-eventType": {
+      "href": "http://localhost:9090/actuator/timelimiterevents/{name}/{eventType}",
+      "templated": true
+    },
+    "timelimiterevents": {
+      "href": "http://localhost:9090/actuator/timelimiterevents",
+      "templated": false
+    },
+    "timelimiterevents-name": {
+      "href": "http://localhost:9090/actuator/timelimiterevents/{name}",
+      "templated": true
+    },
+    "beans": {
+      "href": "http://localhost:9090/actuator/beans",
+      "templated": false
+    },
+    "caches-cache": {
+      "href": "http://localhost:9090/actuator/caches/{cache}",
+      "templated": true
+    },
+    "caches": {
+      "href": "http://localhost:9090/actuator/caches",
+      "templated": false
+    },
+    "health": {
+      "href": "http://localhost:9090/actuator/health",
+      "templated": false
+    },
+    "health-path": {
+      "href": "http://localhost:9090/actuator/health/{*path}",
+      "templated": true
+    },
+    "info": {
+      "href": "http://localhost:9090/actuator/info",
+      "templated": false
+    },
+    "conditions": {
+      "href": "http://localhost:9090/actuator/conditions",
+      "templated": false
+    },
+    "configprops": {
+      "href": "http://localhost:9090/actuator/configprops",
+      "templated": false
+    },
+    "configprops-prefix": {
+      "href": "http://localhost:9090/actuator/configprops/{prefix}",
+      "templated": true
+    },
+    "env": {
+      "href": "http://localhost:9090/actuator/env",
+      "templated": false
+    },
+    "env-toMatch": {
+      "href": "http://localhost:9090/actuator/env/{toMatch}",
+      "templated": true
+    },
+    "loggers": {
+      "href": "http://localhost:9090/actuator/loggers",
+      "templated": false
+    },
+    "loggers-name": {
+      "href": "http://localhost:9090/actuator/loggers/{name}",
+      "templated": true
+    },
+    "threaddump": {
+      "href": "http://localhost:9090/actuator/threaddump",
+      "templated": false
+    },
+    "metrics-requiredMetricName": {
+      "href": "http://localhost:9090/actuator/metrics/{requiredMetricName}",
+      "templated": true
+    },
+    "metrics": {
+      "href": "http://localhost:9090/actuator/metrics",
+      "templated": false
+    },
+    "sbom-id": {
+      "href": "http://localhost:9090/actuator/sbom/{id}",
+      "templated": true
+    },
+    "sbom": {
+      "href": "http://localhost:9090/actuator/sbom",
+      "templated": false
+    },
+    "scheduledtasks": {
+      "href": "http://localhost:9090/actuator/scheduledtasks",
+      "templated": false
+    },
+    "mappings": {
+      "href": "http://localhost:9090/actuator/mappings",
+      "templated": false
+    },
+    "refresh": {
+      "href": "http://localhost:9090/actuator/refresh",
+      "templated": false
+    },
+    "features": {
+      "href": "http://localhost:9090/actuator/features",
+      "templated": false
+    },
+    "serviceregistry": {
+      "href": "http://localhost:9090/actuator/serviceregistry",
+      "templated": false
+    }
+  }
+}

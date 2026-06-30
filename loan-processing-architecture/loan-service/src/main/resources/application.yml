@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: loan-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin123
+
+server:
+  port: 8090
+
+eureka:
+  instance:
+    lease-renewal-interval-in-seconds: 30
+    lease-expiration-duration-in-seconds: 60
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8086/eureka/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+resilience4j:
+  timelimiter:
+    instances:
+      paymentTimeout:
+        timeoutDuration: 2s
+  retry:
+    instances:
+      paymentRetry:
+        maxAttempts: 3
+        waitDuration: 500ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+  bulkhead:
+    instances:
+      paymentBulkhead:
+        maxConcurrentCalls: 25
+        maxWaitDuration: 0
+  circuitbreaker:
+    instances:
+      paymentCircuitBreaker:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+
+
+logging:
+  level:
+    io.github.resilience4j.circuitbreaker: DEBUG
+
+

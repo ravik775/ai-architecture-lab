@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: notification-service }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: notification-service } }
+  template:
+    metadata: { labels: { app: notification-service } }
+    spec:
+      containers:
+        - name: notification-service
+          image: notification-service:local
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8084 }]
+          env:
+            - { name: EUREKA_URL, value: "http://service-registry:8761/eureka/" }
+            - { name: RABBIT_HOST, value: "rabbitmq" }
+            - { name: REDIS_HOST, value: "redis" }
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8084 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: notification-service }
+spec:
+  selector: { app: notification-service }
+  ports: [{ port: 8084, targetPort: 8084 }]

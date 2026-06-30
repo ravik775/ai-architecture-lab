@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: loan-service }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: loan-service } }
+  template:
+    metadata: { labels: { app: loan-service } }
+    spec:
+      containers:
+        - name: loan-service
+          image: loan-service:local
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8081 }]
+          env:
+            - { name: EUREKA_URL, value: "http://service-registry:8761/eureka/" }
+            - { name: RABBIT_HOST, value: "rabbitmq" }
+            - { name: REDIS_HOST, value: "redis" }
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8081 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: { name: loan-service }
+spec:
+  selector: { app: loan-service }
+  ports: [{ port: 8081, targetPort: 8081 }]

@@ -1,0 +1,92 @@
+spring:
+    application:
+        name: api-gateway
+    cloud:
+      gateway:
+          mvc:
+              default-filters:
+                - name: Retry
+                  args:
+                      retries: 3
+                      statuses:
+                          - BAD_GATEWAY
+                          - SERVICE_UNAVAILABLE
+                          - GATEWAY_TIMEOUT
+                      methods:
+                          - GET
+                      backoff:
+                          firstBackoff: 100ms
+                          maxBackoff: 1s
+                          factor: 2
+                          basedOnPreviousValue: false
+
+          server:
+              webmvc:
+                  routes:
+                      - id: loan-service
+                        uri: lb://LOAN-SERVICE
+                        predicates:
+                            - Path=/loan/**,/loan
+                        filters:
+                          - StripPrefix=1
+
+                          - name: CircuitBreaker
+                            args:
+                              id: loanCircuitBreaker
+                              fallbackUri: forward:/fallback/loan-service
+server:
+    port: 8085
+
+eureka:
+    client:
+        register-with-eureka: true
+        fetch-registry: true
+        service-url:
+            defaultZone: http://localhost:8086/eureka/
+
+management:
+    server:
+        port: 9090
+
+    endpoints:
+        web:
+            exposure:
+                include: "*"
+
+    endpoint:
+        health:
+            probes:
+                enabled: true
+
+resilience4j:
+    bulkhead:
+        instances:
+            loanBulkhead:
+                maxConcurrentCalls: 10
+                maxWaitDuration: 0
+    circuitbreaker:
+        configs:
+          default:
+              slidingWindowSize: 2
+              minimumNumberOfCalls: 2
+              failureRateThreshold: 50
+              waitDurationInOpenState: 10s
+              permittedNumberOfCallsInHalfOpenState: 5
+          externalApi:
+              slidingWindowSize: 10
+              failureRateThreshold: 30
+              waitDurationInOpenState: 5s
+        instances:
+            loanCircuitBreaker:
+                baseConfig: default
+
+            paymentCircuitBreaker:
+                baseConfig: externalApi
+                slidingWindowSize: 10
+
+            customerCircuitBreaker:
+                baseConfig: default
+
+logging:
+    level:
+        org.springframework.cloud.gateway: DEBUG

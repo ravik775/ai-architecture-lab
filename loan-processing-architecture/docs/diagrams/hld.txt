@@ -1,0 +1,6 @@
+Client -> API Gateway -> Loan Service -> RabbitMQ
+Loan Service -> Redis
+RabbitMQ -> Credit Score Service
+RabbitMQ -> Document Verification Service
+RabbitMQ -> Notification Service
+Loan Decision Service -> decision endpoint
