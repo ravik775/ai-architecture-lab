@@ -18,8 +18,6 @@ public class FallbackController {
                 System.currentTimeMillis()
         );
 
-        return ResponseEntity
-                .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(response);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }
 }

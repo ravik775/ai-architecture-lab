@@ -1,19 +1,12 @@
-package org.ex.apigateway.config;
-
+package org.ex.apigateway.model;
 import lombok.Builder;
-import lombok.Data;
 
-@Data
 @Builder
-public class RateLimitResult {
-
-    private boolean allowed;
-
-    private long limit;
-
-    private long remaining;
-
-    private long retryAfterSeconds;
-
-    private boolean approximateRemaining;
+public record RateLimitResult(
+        boolean allowed,
+        long limit,
+        long remaining,
+        long retryAfterSeconds,
+        boolean approximateRemaining
+) {
 }

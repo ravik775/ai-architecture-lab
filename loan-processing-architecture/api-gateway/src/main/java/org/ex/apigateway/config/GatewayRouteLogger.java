@@ -1,13 +1,13 @@
 package org.ex.apigateway.config;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.cloud.gateway.server.mvc.filter.SimpleFilterSupplier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.cloud.gateway.server.mvc.config.GatewayMvcProperties;
 
 @Configuration
 public class GatewayRouteLogger {
-
     @Bean
     CommandLineRunner printRoutes(GatewayMvcProperties properties) {
         return args -> {

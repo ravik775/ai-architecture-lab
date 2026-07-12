@@ -28,15 +28,23 @@ spring:
                         predicates:
                             - Path=/loan/**,/loan
                         filters:
-                          - StripPrefix=1
-
+                          - StripPrefix=0
+                          - TenantRateLimiter
                           - name: CircuitBreaker
                             args:
                               id: loanCircuitBreaker
                               fallbackUri: forward:/fallback/loan-service
+
+    data:
+        redis:
+            host: localhost
+            port: 6379
 server:
     port: 8085
 
+local:
+    ratelimiter:
+        leaseSize: 2
 eureka:
     client:
         register-with-eureka: true
