@@ -67,11 +67,6 @@ management:
                 enabled: true
 
 resilience4j:
-    bulkhead:
-        instances:
-            loanBulkhead:
-                maxConcurrentCalls: 10
-                maxWaitDuration: 0
     circuitbreaker:
         configs:
           default:

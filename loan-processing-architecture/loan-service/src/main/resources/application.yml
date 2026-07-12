@@ -13,7 +13,7 @@ spring:
     password: admin123
 
 server:
-  port: 8090
+  port: 0
 
 eureka:
   instance:
@@ -52,6 +52,10 @@ resilience4j:
       paymentBulkhead:
         maxConcurrentCalls: 25
         maxWaitDuration: 0
+      loanServiceBulkhead:
+        maxConcurrentCalls: 10
+        maxWaitDuration: 0
+
   circuitbreaker:
     instances:
       paymentCircuitBreaker:
