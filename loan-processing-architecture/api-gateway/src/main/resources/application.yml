@@ -37,8 +37,10 @@ spring:
 
     data:
         redis:
-            host: localhost
-            port: 6379
+            host: ${REDIS_HOST:localhost}
+            port: ${REDIS_PORT:6379}
+            password: ${REDIS_PASSWORD}
+            timeout: ${REDIS_TIMEOUT:2s}
 server:
     port: 8085
 

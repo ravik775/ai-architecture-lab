@@ -8,6 +8,21 @@ services:
       args:
         SERVICE_NAME: loan-service
 
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?RABBITMQ_USERNAME must be set}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set}
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   redis:
     image: redis:7.4-alpine
     container_name: redis
@@ -16,13 +31,22 @@ services:
     ports:
       - "6379:6379"
 
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+
     volumes:
       - redis-data:/data
 
-    command: redis-server --appendonly yes
-
+    command: #redis-server --appendonly yes
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: #["CMD", "redis-cli", "ping"]
+        - CMD-SHELL
+        - redis-cli -a "$${REDIS_PASSWORD}" --no-auth-warning ping | grep PONG
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,17 +58,21 @@ services:
 
     ports:
       - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
 
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: admin123
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?RABBITMQ_USERNAME must be set}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD must be set}
 
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
 
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: #["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+        [
+          "CMD-SHELL",
+          "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
