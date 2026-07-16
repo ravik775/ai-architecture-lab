@@ -1,0 +1,21 @@
+services:
+  text-polisher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: text-polisher
+
+    env_file:
+      - app/.env
+      
+    environment:
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-http}
+
+    ports:
+      - "8000:8000"
+
+    restart: unless-stopped
+
+    stdin_open: true
+    tty: true

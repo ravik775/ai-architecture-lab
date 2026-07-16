@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "text-polisher": {
+      "command": "uv",
+      "args": [
+        "run",
+        "app/main_v2.py"
+      ]
+    }
+  }
+}
