@@ -130,12 +130,14 @@ chain = prompt | chat_model
 # -----------------------------------------------------
 # MCP
 # -----------------------------------------------------
+host = os.getenv("MCP_HOST", "0.0.0.0")
+port = int(os.getenv("MCP_PORT", 8000))
 
-mcp = FastMCP("text-polisher")
+mcp = FastMCP("text-polisher",  host=host, port=port, log_level="WARNING")
 
 
 @mcp.tool()
-def polish_text(raw_text: str) -> dict:
+def polish_text(raw_text: str) -> PolishedText:
     """
     Correct grammar and improve text quality.
     """
@@ -161,9 +163,8 @@ def polish_text(raw_text: str) -> dict:
         result = PolishedText.model_validate(
             data
         )
-
-        return result.model_dump()
-
+        logger.info(f"Polished text: {result.text}, raw_text: {raw_text}")
+        return result
     except Exception as ex:
 
         return {
@@ -186,5 +187,5 @@ if __name__ == "__main__":
         logger.info("Starting MCP Server [text-polisher] using STDIO transport")
     elif os.getenv("MCP_TRANSPORT") == "http":
         logger.info(f"Starting MCP Server [text-polisher] using HTTP transport on {host}:{port}")
-        args = { "transport": "streamable-http", "host": host, "port": port}
+        args = { "transport": "streamable-http"}
     mcp.run(**args)

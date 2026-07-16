@@ -1,10 +1,14 @@
 {
   "servers": {
     "text-polisher": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    },
+    "text-polisher-local": {
       "command": "uv",
       "args": [
         "run",
-        "app/main_v2.py"
+        "app/main.py"
       ]
     }
   }
