@@ -136,7 +136,7 @@ same code.
 2. Set your model credentials in `app/.env` (not committed — see
    `.dockerignore`), e.g.:
    ```
-   OPENAI_API_KEY=sk-...
+   MODEL_API_KEY=sk-...
    MODEL_NAME=gpt-4o-mini
    ```
 3. Open the project folder in VS Code. The config in `app/vscode/mcp.json`
@@ -155,7 +155,7 @@ editing `app/main.py` directly.
 1. Set your model credentials in `app/.env` (not committed — see
    `.dockerignore`), e.g.:
    ```
-   OPENAI_API_KEY=sk-...
+   MODEL_API_KEY=sk-...
    MODEL_NAME=gpt-4o-mini
    ```
 2. Build and start the container:
