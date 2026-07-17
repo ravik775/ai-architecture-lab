@@ -39,7 +39,7 @@ load_dotenv()
 MODEL_NAME = os.getenv("LLM_MODEL", "github/gpt-4.1")
 
 if MODEL_NAME.startswith("github/"):
-    github_token = os.getenv("GITHUB_TOKEN")
+    github_token = os.getenv("MODEL_API_KEY")
     if not github_token:
         raise RuntimeError("GITHUB_TOKEN not configured")
     os.environ["GITHUB_API_KEY"] = github_token
