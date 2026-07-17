@@ -207,8 +207,3 @@ To keep this a clean, minimal reference, this server does not implement:
   client-exposed primitives, out of scope for a single-tool demo, but worth
   exploring as a follow-up if you want to see the full primitive set MCP
   defines.
-- Additional tools like `summarize_text` or `rewrite_email` — an earlier
-  draft of this README sketched these in an architecture diagram, but they
-  were never implemented. They've been removed from the docs here rather
-  than left as a promise the code doesn't keep. They'd be natural, low-risk
-  additions if you want to extend the tool set later.
