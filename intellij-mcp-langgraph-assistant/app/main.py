@@ -1,20 +1,32 @@
-from mcp.server.fastmcp import FastMCP
+"""
+text-polisher MCP Server
+-------------------------
+A minimal, reference-quality MCP server that demonstrates the three
+core *server-side* primitives defined by the Model Context Protocol:
 
-from pydantic import BaseModel, Field
+    1. Resources -> read-only context      (resource://...)
+    2. Prompts   -> reusable interaction templates (@mcp.prompt())
+    3. Tools     -> executable actions             (@mcp.tool())
 
-from langchain_litellm import ChatLiteLLM
-from langchain_core.prompts import ChatPromptTemplate
+The domain is intentionally simple (polishing text) so the MCP
+concepts stay the star of the show rather than the business logic.
+"""
 
+import logging
+import os
+from typing import Literal
+
+from mcp.server.fastmcp.prompts import base
 from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_litellm import ChatLiteLLM
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, Field
 import sys
-import json
-import os, logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    stream=sys.stderr,
-    format="%(asctime)s %(levelname)s %(message)s"
-)
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s")
 
 logger = logging.getLogger(__name__)
 
@@ -24,107 +36,52 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-MODEL_NAME = os.getenv(
-    "LLM_MODEL",
-    "github/gpt-4.1"
-)
+MODEL_NAME = os.getenv("LLM_MODEL", "github/gpt-4.1")
 
 if MODEL_NAME.startswith("github/"):
-
     github_token = os.getenv("GITHUB_TOKEN")
-
     if not github_token:
-        raise RuntimeError(
-            "GITHUB_TOKEN not configured"
-        )
-
+        raise RuntimeError("GITHUB_TOKEN not configured")
     os.environ["GITHUB_API_KEY"] = github_token
 
 
-# -----------------------------------------------------
-# Response Schema
-# -----------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Structured output contract
+# ---------------------------------------------------------------------------
 class PolishedText(BaseModel):
+    """The shape every polish_text call returns, so downstream tools/agents
+    can consume the result programmatically instead of parsing prose."""
 
-    text: str = Field(
-        description="Grammar corrected text"
-    )
+    text: str = Field(description="The polished version of the input text.")
+    changes_made: list[str] = Field( description="Short bullet list of the concrete edits that were made.")
 
-    changes_made: list[str] = Field(
-        default_factory=list,
-        description="List of modifications performed"
-    )
+# ---------------------------------------------------------------------------
+# Model + chain
+#
+# We bind the Pydantic schema directly via with_structured_output instead of
+# hand-parsing the model's raw text response. This removes an entire class
+# of failures (stray markdown fences, trailing prose, truncated JSON) that a
+# manual json.loads() on free-form model output is exposed to.
+# ---------------------------------------------------------------------------
+chat_model = ChatLiteLLM(model=MODEL_NAME, temperature=0)
+structured_model = chat_model.with_structured_output(PolishedText)
 
-
-# -----------------------------------------------------
-# LLM
-# -----------------------------------------------------
-
-chat_model = ChatLiteLLM(
-    model=MODEL_NAME,
-    temperature=0,
-    max_tokens=512
-)
-
-
-# -----------------------------------------------------
-# Prompt
-# -----------------------------------------------------
-
-system_prompt = """
-You are a professional editor.
-
-Responsibilities:
-
-1. Correct grammar.
-2. Correct spelling.
-3. Correct punctuation.
-4. Improve clarity.
-5. Improve professionalism.
-6. Improve consistency.
-
-Return ONLY valid JSON.
-
-Example:
-
-{{
-  "text": "This is the corrected text.",
-  "changes_made": [
-    "Fixed capitalization",
-    "Corrected spelling",
-    "Improved punctuation"
-  ]
-}}
-
-Rules:
-
-- Do not return markdown.
-- Do not return explanations.
-- Do not return code fences.
-- Output must be valid JSON.
-"""
-
+SYSTEM_PROMPT = """
+You are a professional editor. Polish the user's text for clarity,
+tone, and correctness while preserving their original meaning and intent.
+Follow the company's writing standards and writing rules provided as
+context. Do not invent information that isn't in the source text.
+""".strip()
 
 prompt = ChatPromptTemplate.from_messages(
     [
-        (
-            "system",
-            system_prompt
-        ),
-        (
-            "human",
-            "{raw_text}"
-        )
+        ("system", SYSTEM_PROMPT),
+        ("human", "{raw_text}"),
     ]
 )
 
-
-# -----------------------------------------------------
-# Chain
-# -----------------------------------------------------
-
-chain = prompt | chat_model
+chain = prompt | structured_model
 
 
 # -----------------------------------------------------
@@ -135,57 +92,103 @@ port = int(os.getenv("MCP_PORT", 8000))
 
 mcp = FastMCP("text-polisher",  host=host, port=port, log_level="WARNING")
 
-
-@mcp.tool()
-def polish_text(raw_text: str) -> PolishedText:
-    """
-    Correct grammar and improve text quality.
-    """
-
-    response = chain.invoke(
-        {
-            "raw_text": raw_text
-        }
+# ---------------------------------------------------------------------------
+# 1) RESOURCES — read-only, application-controlled context.
+#    The host decides when to pull these into context; the model never
+#    "calls" a resource the way it calls a tool.
+# ---------------------------------------------------------------------------
+@mcp.resource("resource://style-guide", name="Company Writing Standards", description="Company writing standards for professional communication.")
+def style_guide() -> str:
+    logging.info("1. style_guide resource requested")
+    return (
+        "- Prefer active voice.\n"
+        "- Keep sentences under 25 words where possible.\n"
+        "- Avoid jargon unless the audience is technical.\n"
+        "- Use inclusive, plain language.\n"
+        "- Lead with the main point, then supporting detail."
     )
 
-    content = response.content
 
+@mcp.resource("resource://writing-rules", name="Writing Rules", description="General writing rules for professional communication.")
+def writing_rules() -> str:
+    logging.info("2. writing_rules resource requested")
+    return (
+        "- No ALL CAPS except for acronyms.\n"
+        "- One idea per sentence.\n"
+        "- Spell out numbers below 10 in prose.\n"
+        "- Match the tone requested (formal/casual) if the user specifies one."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2) PROMPTS — reusable, user-controlled interaction templates.
+#    Unlike a tool, a prompt is surfaced to the *user* as something they can
+#    explicitly select (e.g. a slash command), rather than something the
+#    model decides to invoke on its own.
+#
+#    This is the primitive the previous version of this server was missing.
+#    It composes the two resources above with the polish_text tool into a
+#    guided, channel-aware workflow.
+# ---------------------------------------------------------------------------
+@mcp.prompt(
+    name="polish_for_channel",
+    description=(
+        "Guided workflow: polish a piece of text for a specific "
+        "communication channel (email, chat, or formal document), "
+        "using the company style guide and writing rules as context."
+    ),
+)
+def polish_for_channel( raw_text: str, channel: Literal["email", "chat", "doc"] = "email") -> str:
+    logging.info(f"3. polish_for_channel prompt requested for channel={channel}")
+    channel_guidance = {
+        "email": "Use a professional greeting and sign-off. Medium formality.",
+        "chat": "Be brief and conversational. Skip greetings/sign-offs.",
+        "doc": "Use formal tone. No contractions. Prefer complete sentences.",
+    }[channel]
+
+    return (
+        "Read the resource://style-guide and resource://writing-rules "
+        "resources for context, then call the polish_text tool on the "
+        f"text below.\n\nChannel: {channel}\nChannel guidance: {channel_guidance}"
+        f"\n\nText to polish:\n{raw_text}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3) TOOLS — model-controlled, executable actions with typed inputs/outputs.
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def polish_text(raw_text: str) -> PolishedText:
+    """Polish the given text for clarity, tone, and correctness.
+
+    Returns a PolishedText object containing the rewritten text and a
+    short list of the changes made, so the result can be consumed
+    programmatically by other tools or agents.
+    """
+    logging.info(f"4. polish_text tool requested, {raw_text=}")
     try:
+        result = chain.invoke({"raw_text": raw_text})
+    except Exception:
+        logger.exception("polish_text failed to produce structured output")
+        raise
 
-        if isinstance(content, list):
-            content = "".join(
-                str(x)
-                for x in content
-            )
+    if not isinstance(result, PolishedText):
+        # with_structured_output can return a dict depending on the
+        # underlying provider; normalize defensively.
+        result = PolishedText.model_validate(result)
 
-        data = json.loads(content)
-
-        result = PolishedText.model_validate(
-            data
-        )
-        logger.info(f"Polished text: {result.text}, raw_text: {raw_text}")
-        return result
-    except Exception as ex:
-
-        return {
-            "error": "Invalid model response",
-            "details": str(ex),
-            "raw_response": content
-        }
+    return result
 
 
-# -----------------------------------------------------
-# Main
-# -----------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    args = { "transport" :"stdio"}
-    host = os.getenv("MCP_HOST", "0.0.0.0")
-    port = int(os.getenv("MCP_PORT", 8000))
-    if os.getenv("MCP_TRANSPORT") == "stdio":
-        args = { "transport" :"stdio"}
-        logger.info("Starting MCP Server [text-polisher] using STDIO transport")
-    elif os.getenv("MCP_TRANSPORT") == "http":
-        logger.info(f"Starting MCP Server [text-polisher] using HTTP transport on {host}:{port}")
-        args = { "transport": "streamable-http"}
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+
+    if transport == "stdio":
+        args = {"transport": "stdio"}
+    else:
+        args = {"transport": "streamable-http"}
+
     mcp.run(**args)
