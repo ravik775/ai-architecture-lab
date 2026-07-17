@@ -122,26 +122,81 @@ The server supports both MCP transports, controlled by `MCP_TRANSPORT`:
 
 ## Running it
 
-**Locally (stdio), via VS Code / any MCP-aware editor:**
-The config in `app/vscode/mcp.json` will launch the server with `uv run
-app/main.py` and connect over stdio automatically.
+There are three ways to run this server: locally via VS Code (stdio), as a
+Docker container (streamable-http), or connected directly to Claude as an
+MCP connector. Pick the one that matches your workflow — all three run the
+same code.
 
-**As a container (streamable-http):**
+### 1. Locally, via VS Code / any MCP-aware editor (stdio)
 
-```bash
-docker compose up --build
-```
+1. Install dependencies (this project uses `uv`):
+   ```bash
+   uv sync
+   ```
+2. Set your model credentials in `app/.env` (not committed — see
+   `.dockerignore`), e.g.:
+   ```
+   OPENAI_API_KEY=sk-...
+   MODEL_NAME=gpt-4o-mini
+   ```
+3. Open the project folder in VS Code. The config in `app/vscode/mcp.json`
+   already defines a `text-polisher-local` entry that launches the server
+   with `uv run app/main.py` and connects over stdio automatically —
+   VS Code's MCP support will pick it up with no extra setup.
+4. In VS Code's MCP panel (or your editor's equivalent), start the
+   `text-polisher-local` server and confirm the `polish_text` tool,
+   `polish_for_channel` prompt, and both resources are listed.
 
-This starts the server on `http://localhost:8000/mcp`, matching the
-`text-polisher` entry in `app/vscode/mcp.json`.
+Use stdio for local development — it's the fastest loop when you're
+editing `app/main.py` directly.
 
-Set your model credentials in `app/.env` (not committed — see
-`.dockerignore`), e.g.:
+### 2. As a Docker container (streamable-http)
 
-```
-OPENAI_API_KEY=sk-...
-MODEL_NAME=gpt-4o-mini
-```
+1. Set your model credentials in `app/.env` (not committed — see
+   `.dockerignore`), e.g.:
+   ```
+   OPENAI_API_KEY=sk-...
+   MODEL_NAME=gpt-4o-mini
+   ```
+2. Build and start the container:
+   ```bash
+   docker compose up --build
+   ```
+3. This starts the server on `http://localhost:8000/mcp`, matching the
+   `text-polisher` (non-`-local`) entry in `app/vscode/mcp.json`. You can
+   point any MCP-aware client — VS Code, Claude, or a custom host — at
+   that URL.
+
+Use Docker when you want the server running persistently in the
+background, independent of any one editor session.
+
+### 3. As a connector in Claude
+
+Claude (claude.ai, the desktop app, or Claude Code) can connect to this
+server the same way it connects to any remote MCP server, once it's
+reachable over HTTP:
+
+1. Start the server with the streamable-http transport — either via
+   Docker (option 2 above), or locally with:
+   ```bash
+   MCP_TRANSPORT=streamable-http uv run app/main.py
+   ```
+2. If you're running Claude locally against `http://localhost:8000/mcp`,
+   make sure the host machine and port are reachable from wherever Claude
+   is running (e.g. no extra tunnel needed if both are on the same
+   machine; use a tool like `ngrok` if Claude is remote and your server
+   is local).
+3. In Claude's connector/MCP settings, add a new connector and provide the
+   server's URL (`http://localhost:8000/mcp` for local Docker, or your
+   tunnel/public URL otherwise).
+4. Once connected, Claude will have access to the `polish_text` tool and
+   the `polish_for_channel` prompt, and can read the `style-guide` and
+   `writing-rules` resources as context.
+
+> Remember the authentication note above: this server's HTTP transport
+> has no auth layer built in. Keep it on localhost or behind your own
+> auth-enforcing reverse proxy before connecting anything beyond a
+> trusted local setup.
 
 ## What's intentionally *not* here
 
