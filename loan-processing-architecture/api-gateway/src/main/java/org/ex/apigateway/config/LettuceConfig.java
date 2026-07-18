@@ -59,11 +59,11 @@ public class LettuceConfig {
 
             builder.withAuthentication(
                     redisProperties.getUsername(),
-                    redisProperties.getPassword());
+                    redisProperties.getPassword().toCharArray());
         }
         // Legacy password only
         else if (redisProperties.getPassword() != null) {
-            builder.withPassword(redisProperties.getPassword());
+            builder.withPassword(redisProperties.getPassword().toCharArray());
         }
 
         RedisURI redisUri = builder.build();

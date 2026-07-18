@@ -1,0 +1,4 @@
+GET http://localhost:50712/loan?from=Direct
+
+###
+GET http://localhost:8085/loan?from=Gateway

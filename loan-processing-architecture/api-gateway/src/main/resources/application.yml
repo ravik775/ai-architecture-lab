@@ -1,97 +1,86 @@
 spring:
-    application:
-        name: api-gateway
-    cloud:
-      gateway:
-          mvc:
-              default-filters:
-                - name: Retry
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          default-filters:
+            - name: Retry
+              args:
+                retries: 3
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 1s
+                  factor: 2
+                  basedOnPreviousValue: false
+          routes:
+            - id: loan-service
+              uri: lb://LOAN-SERVICE
+              predicates:
+                - Path=/loan/**,/loan
+              filters:
+                - StripPrefix=0
+                - name: CircuitBreaker
                   args:
-                      retries: 3
-                      statuses:
-                          - BAD_GATEWAY
-                          - SERVICE_UNAVAILABLE
-                          - GATEWAY_TIMEOUT
-                      methods:
-                          - GET
-                      backoff:
-                          firstBackoff: 100ms
-                          maxBackoff: 1s
-                          factor: 2
-                          basedOnPreviousValue: false
-
-          server:
-              webmvc:
-                  routes:
-                      - id: loan-service
-                        uri: lb://LOAN-SERVICE
-                        predicates:
-                            - Path=/loan/**,/loan
-                        filters:
-                          - StripPrefix=0
-                          - TenantRateLimiter
-                          - name: CircuitBreaker
-                            args:
-                              id: loanCircuitBreaker
-                              fallbackUri: forward:/fallback/loan-service
-
-    data:
-        redis:
-            host: ${REDIS_HOST:localhost}
-            port: ${REDIS_PORT:6379}
-            password: ${REDIS_PASSWORD}
-            timeout: ${REDIS_TIMEOUT:2s}
+                    name: loanCircuitBreaker
+                    fallbackUri: forward:/fallback/loan-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
 server:
-    port: 8085
+  port: 8085
 
 local:
-    ratelimiter:
-        leaseSize: 2
+  ratelimiter:
+    leaseSize: 2
 eureka:
-    client:
-        register-with-eureka: true
-        fetch-registry: true
-        service-url:
-            defaultZone: http://localhost:8086/eureka/
-
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8086/eureka/
 management:
-    server:
-        port: 9090
-
-    endpoints:
-        web:
-            exposure:
-                include: "health,info,circuitbreakers"
-
-    endpoint:
-        health:
-            probes:
-                enabled: true
-
+  server:
+    port: 9090
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,circuitbreakers"
+  endpoint:
+    health:
+      probes:
+        enabled: true
 resilience4j:
-    circuitbreaker:
-        configs:
-          default:
-              slidingWindowSize: 2
-              minimumNumberOfCalls: 2
-              failureRateThreshold: 50
-              waitDurationInOpenState: 10s
-              permittedNumberOfCallsInHalfOpenState: 5
-          externalApi:
-              slidingWindowSize: 10
-              failureRateThreshold: 30
-              waitDurationInOpenState: 5s
-        instances:
-            loanCircuitBreaker:
-                baseConfig: default
-
-            paymentCircuitBreaker:
-                baseConfig: externalApi
-                slidingWindowSize: 10
-
-            customerCircuitBreaker:
-                baseConfig: default
-
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 2
+        minimumNumberOfCalls: 2
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 5
+      externalApi:
+        slidingWindowSize: 10
+        failureRateThreshold: 30
+        waitDurationInOpenState: 5s
+    instances:
+      loanCircuitBreaker:
+        baseConfig: default
+      paymentCircuitBreaker:
+        baseConfig: externalApi
+        slidingWindowSize: 10
+      customerCircuitBreaker:
+        baseConfig: default
 logging:
-    level:
-        org.springframework.cloud.gateway: DEBUG
+  level:
+    org.springframework.cloud.gateway: DEBUG

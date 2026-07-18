@@ -3,20 +3,26 @@ spring:
     name: loan-service
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
 
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: admin
-    password: admin123
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:}
+    password: ${RABBITMQ_PASSWORD:}
+    timeout: ${RABBITMQ_TIMEOUT:2s}
 
 server:
   port: 0
 
 eureka:
   instance:
+    prefer-ip-address: true
+    ip-address: 127.0.0.1
+    instance-id: ${spring.application.name}:${random.value}
     lease-renewal-interval-in-seconds: 30
     lease-expiration-duration-in-seconds: 60
   client:
@@ -69,5 +75,4 @@ resilience4j:
 logging:
   level:
     io.github.resilience4j.circuitbreaker: DEBUG
-
-
+    org.ex.loanservice: DEBUG
