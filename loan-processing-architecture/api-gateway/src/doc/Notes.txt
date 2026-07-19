@@ -190,3 +190,32 @@ http://localhost:9090/actuator
     }
   }
 }
+
+docker compose --env-file .env.sb --profile loan build api-gateway
+docker compose --env-file .env.sb --profile loan up -d --no-deps api-gateway
+docker compose --env-file .env.sb --profile loan up -d --build --force-recreate --no-deps api-gateway
+Rebuild and redeploy in one command
+docker compose --env-file .env.sb --profile loan up -d --build --no-deps api-gateway
+
+docker compose ps api-gateway
+
+Remove old gateway container first:
+docker compose rm -f api-gateway
+docker compose --env-file .env.sb --profile loan up -d --build api-gateway
+
+Rebuild without cache:
+docker compose --env-file .env.sb --profile loan build --no-cache api-gateway
+
+See resolved compose config:
+docker compose --env-file .env.sb --profile loan config
+
+curl.exe -k http://localhost:8085/loan?from=Direct
+{"errorCode":"LOAN_SERVICE_UNAVAILABLE","message":"Loan service is temporarily unavailable, please try again later.","timestamp":1784482854644}
+
+
+curl -vk --cert /spiffe-certs/svid.pem --key /spiffe-certs/svid_key.pem --cacert /spiffe-certs/bundle.pem  https://loan-service:46383/loan?from=GatewayContainer
+
+openssl s_client -connect loan-service:46383 -cert /spiffe-certs/svid.pem -key /spiffe-certs/svid_key.pem -CAfile /spiffe-certs/bundle.pem
+
+openssl x509 -in /spiffe-certs/bundle.pem -text -noout
+openssl verify  -CAfile /spiffe-certs/bundle.pem /spiffe-certs/svid.pem

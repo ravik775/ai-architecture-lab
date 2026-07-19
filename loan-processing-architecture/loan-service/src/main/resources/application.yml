@@ -14,22 +14,40 @@ spring:
     username: ${RABBITMQ_USERNAME:}
     password: ${RABBITMQ_PASSWORD:}
     timeout: ${RABBITMQ_TIMEOUT:2s}
+  ssl:
+    bundle:
+      pem:
+        spiffe:
+          keystore:
+            certificate: file:/spiffe-certs/svid.pem
+            private-key: file:/spiffe-certs/svid_key.pem
+          truststore:
+            certificate: file:/spiffe-certs/bundle.pem
 
 server:
-  port: 0
+  port: ${LOAN_SERVER_PORT:8080}
+  ssl:
+    enabled: true
+    bundle: spiffe
+    client-auth: need
+    certificate: /spiffe-certs/svid.pem
+    certificate-private-key: /spiffe-certs/svid_key.pem
+    trust-certificate: /spiffe-certs/bundle.pem
 
 eureka:
   instance:
-    prefer-ip-address: true
-    ip-address: 127.0.0.1
-    instance-id: ${spring.application.name}:${random.value}
+    prefer-ip-address: false
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:loan-service}
+    non-secure-port-enabled: false
+    secure-port-enabled: true
+    secure-port: ${SERVER_PORT:0}
     lease-renewal-interval-in-seconds: 30
     lease-expiration-duration-in-seconds: 60
   client:
     register-with-eureka: true
     fetch-registry: true
     service-url:
-      defaultZone: http://localhost:8086/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://service-registry:8086/eureka/}
 
 management:
   endpoints:

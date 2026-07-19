@@ -1,0 +1,1 @@
+docker compose --env-file .env.sb --profile loan up -d --build
