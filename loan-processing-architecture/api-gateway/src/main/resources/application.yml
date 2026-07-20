@@ -48,7 +48,7 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
     service-url:
-      defaultZone: http://localhost:8086/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://service-registry:8086/eureka/}
 management:
   server:
     port: 9090
@@ -83,4 +83,8 @@ resilience4j:
         baseConfig: default
 logging:
   level:
-    org.springframework.cloud.gateway: DEBUG
+    reactor.netty.http.client: DEBUG
+    reactor.netty.transport: DEBUG
+    org.springframework.cloud.gateway: TRACE
+    org.springframework.cloud.loadbalancer: TRACE
+    org.springframework.cloud.gateway.filter.ReactiveLoadBalancerClientFilter: TRACE

@@ -1,11 +1,13 @@
 package org.ex.apigateway.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
+@Slf4j
 public class GatewayRouteLogger {
 
     /**
@@ -17,11 +19,11 @@ public class GatewayRouteLogger {
     public CommandLineRunner printRoutes(RouteLocator routeLocator) {
         return args -> routeLocator.getRoutes()
                 .doOnNext(route -> {
-                    System.out.println("================================");
-                    System.out.println("Route ID   : " + route.getId());
-                    System.out.println("URI        : " + route.getUri());
-                    System.out.println("Predicate  : " + route.getPredicate());
-                    System.out.println("Filters    : " + route.getFilters());
+                    log.info("================================");
+                    log.info("Route ID   : " + route.getId());
+                    log.info("URI        : " + route.getUri());
+                    log.info("Predicate  : " + route.getPredicate());
+                    log.info("Filters    : " + route.getFilters());
                 })
                 .subscribe();
     }
