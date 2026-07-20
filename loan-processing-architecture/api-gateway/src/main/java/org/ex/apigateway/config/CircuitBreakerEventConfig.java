@@ -2,11 +2,13 @@ package org.ex.apigateway.config;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 
 import jakarta.annotation.PostConstruct;
 
 @Configuration
+@Slf4j
 public class CircuitBreakerEventConfig {
 
     private final CircuitBreakerRegistry registry;
@@ -22,17 +24,11 @@ public class CircuitBreakerEventConfig {
         for(var cb : registry.getAllCircuitBreakers()) {
             cb.getEventPublisher()
                     .onStateTransition(event ->
-                            System.out.println(
-                                    "Circuit Breaker State Changed: "
-                                            + event.getStateTransition()
-                            ));
+                            log.info("Circuit Breaker State Changed: {}", event.getStateTransition()));
 
             cb.getEventPublisher()
                     .onError(event ->
-                            System.out.println(
-                                    "Circuit Breaker Error: "
-                                            + event.getThrowable().getMessage()
-                            ));
+                            log.info("Circuit Breaker Error: {}",  event.getThrowable().getMessage() ));
         }
     }
 }

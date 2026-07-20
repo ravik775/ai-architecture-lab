@@ -52,7 +52,7 @@ services:
       - .env.sb
     environment:
       SERVICE: LOAN
-      SERVER_PORT: 0
+      LOAN_SERVER_PORT: 0
       EUREKA_INSTANCE_HOSTNAME: loan-service
     volumes:
       - spiffe-loan-certs:/spiffe-certs:ro

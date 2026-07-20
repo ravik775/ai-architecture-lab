@@ -40,7 +40,7 @@ eureka:
     hostname: ${EUREKA_INSTANCE_HOSTNAME:loan-service}
     non-secure-port-enabled: false
     secure-port-enabled: true
-    secure-port: ${SERVER_PORT:0}
+    secure-port:  ${LOAN_SERVER_PORT}
     lease-renewal-interval-in-seconds: 30
     lease-expiration-duration-in-seconds: 60
   client:
