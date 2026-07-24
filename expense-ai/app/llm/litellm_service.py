@@ -23,7 +23,7 @@ class LiteLLMService(LLMService):
             response = completion(
                 model=model,
                 api_key=settings.ai.model_api_key,
-                api_base=settings.ai.model_base_url,
+                #api_base=settings.ai.model_base_url,
                 timeout=settings.ai.timeout,
                 temperature=settings.ai.temperature,
                 max_tokens=settings.ai.max_tokens,

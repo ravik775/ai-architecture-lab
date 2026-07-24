@@ -22,3 +22,5 @@ opentelemetry-sdk
 opentelemetry-instrumentation-fastapi
 
 pytest
+pandas==3.0.5
+tabulate==0.10.0

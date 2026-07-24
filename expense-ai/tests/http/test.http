@@ -1,4 +1,7 @@
-POST http://localhost:8000//api/v1/expenses/analyze
+GET http://localhost:8000/health
+
+###
+POST http://localhost:8000/api/v1/expenses/analyze
 Content-Type: application/json
 
 {
@@ -12,4 +15,115 @@ Content-Type: application/json
                     "category": "Travel"
                 }
             ]
+}
+
+
+####
+
+POST http://localhost:8000/api/v1/expenses/analyze
+Content-Type: application/json
+
+{
+    "submitted_by": "John Doe",
+    "currency": "INR",
+    "expenses": [
+        {
+            "description": "Flight ticket to client meeting",
+            "amount": 12500.50,
+            "merchant": "Air India",
+            "category": "Travel"
+        },
+        {
+            "description": "Team lunch at downtown restaurant",
+            "amount": 3400.00,
+            "merchant": "Spice Kitchen",
+            "category": "Meals"
+        },
+        {
+            "description": "Hotel accommodation for 2 nights",
+            "amount": 8500.00,
+            "merchant": "Hotel Grand",
+            "category": "Lodging"
+        },
+        {
+            "description": "Monthly cloud hosting subscription",
+            "amount": 4500.00,
+            "merchant": "AWS",
+            "category": "Software"
+        },
+        {
+            "description": "Cab ride to airport",
+            "amount": 850.00,
+            "merchant": "Uber",
+            "category": "Transportation"
+        },
+        {
+            "description": "Printer ink cartridges and paper",
+            "amount": 1200.00,
+            "merchant": "Office Depot",
+            "category": "Supplies"
+        },
+        {
+            "description": "High-speed broadband internet bill",
+            "amount": 1499.00,
+            "merchant": "Airtel",
+            "category": "Utilities"
+        },
+        {
+            "description": "Online professional development course",
+            "amount": 6000.00,
+            "merchant": "Coursera",
+            "category": "Training"
+        },
+        {
+            "description": "Client entertainment gift basket",
+            "amount": 2500.00,
+            "merchant": "Ferns N Petals",
+            "category": "Entertainment"
+        },
+        {
+            "description": "Emergency laptop repair service",
+            "amount": 3200.00,
+            "merchant": "PC Care Hub",
+            "category": "Maintenance"
+        }
+    ]
+}
+
+
+
+####
+
+POST http://localhost:8000/api/v1/expenses/analyze
+Content-Type: application/json
+
+{
+    "submitted_by": "John Doe",
+    "currency": "INR",
+    "expenses": [
+        {
+            "description": "Flight ticket to client meeting",
+            "amount": 12500.50,
+            "merchant": "Air India",
+            "category": "Travel"
+        },
+        {
+            "description": "Team lunch at downtown restaurant",
+            "amount": 3400.00,
+            "merchant": "Spice Kitchen",
+            "category": "Meals"
+        },
+        {
+            "description": "Hotel accommodation for 2 nights",
+            "amount": 8500.00,
+            "merchant": "Hotel Grand",
+            "category": "Lodging"
+        },
+        {
+            "description": "Monthly cloud hosting subscription",
+            "amount": 4500.00,
+            "merchant": "AWS",
+            "category": "Software"
+        }
+    ]
 }

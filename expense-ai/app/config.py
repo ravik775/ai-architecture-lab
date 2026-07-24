@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel
 from enum import Enum
-
+import os
 class Providers(str, Enum):
     MOCK = "mock"
     LITELLM = "litellm"
@@ -13,7 +13,7 @@ class AISettings(BaseModel):
     model_api_key: str | None = None
     temperature: int = 0
     max_tokens: int | None = 200
-    timeout: int = 2400
+    timeout: int = 36000
     stream: bool = False
     max_retries: int = 3
     retry_backoff: float = 1.0
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     integration: IntegrationSettings = IntegrationSettings()
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.getenv("ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         env_nested_delimiter="."  # <--- This allows using dots for nesting
