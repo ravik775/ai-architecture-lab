@@ -221,3 +221,20 @@ openssl x509 -in /spiffe-certs/bundle.pem -text -noout
 openssl verify  -CAfile /spiffe-certs/bundle.pem /spiffe-certs/svid.pem
 
 docker run --rm --network loan curlimages/curl:8.10.1 -k -v https://loan-service:36255/loan
+
+
+curl -X POST http://localhost:8090/realms/loan-platform/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=api-gateway -d client_secret=changeit-in-non-dev \
+  -d username=alice -d password=alice123
+
+
+Build, run, and verify
+  docker compose --env-file .env.sb --profile loan up -d --build
+  docker compose --env-file .env.sb --profile loan logs keycloak | Select-String "Imported realm"
+
+ Then get a token and confirm the tenant claim actually round-trips:
+ curl -X POST http://localhost:8090/realms/loan-platform/protocol/openid-connect/token `
+   -d grant_type=password -d client_id=api-gateway -d client_secret=changeit-in-non-dev `
+   -d username=alice -d password=alice123
+
+  Decode the access_token (jwt.io, or paste it back to me) and confirm you see "tenant": "tenant-a" and "roles": ["loan-officer"]. Then hit the gateway with and without the token to confirm 401 vs 200, and check loan-service's logs for the X-Internal-Tenant-Id it received — that end-to-end chain is what closes both threat-model findings at once

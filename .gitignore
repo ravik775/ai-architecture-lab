@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+**/repomix*.xml
 .mvn/**
 **/mvnw
 **/mvnw.cmd

@@ -88,3 +88,9 @@ logging:
     org.springframework.cloud.gateway: TRACE
     org.springframework.cloud.loadbalancer: TRACE
     org.springframework.cloud.gateway.filter.ReactiveLoadBalancerClientFilter: TRACE
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://keycloak:8080/realms/loan-platform

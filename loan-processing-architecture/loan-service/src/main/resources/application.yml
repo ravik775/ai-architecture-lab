@@ -8,6 +8,12 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: ${REDIS_TIMEOUT:2s}
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://keycloak:8080/realms/loan-platform
+
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

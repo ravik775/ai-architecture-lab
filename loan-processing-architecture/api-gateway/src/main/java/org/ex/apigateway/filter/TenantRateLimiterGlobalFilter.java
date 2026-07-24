@@ -19,33 +19,49 @@ import java.nio.charset.StandardCharsets;
  * Runs as a GlobalFilter so it applies to every route without needing to be
  * wired in per-route via a named filter factory. Bean is declared in
  * {@code TenantRateLimiterConfiguration}.
+ *
+ * Tenant is now derived from the verified JWT "tenant" claim
+ * (see TenantFilterFunctions), not from the client-supplied X-Tenant-Id
+ * header. By the time this filter runs, Spring Security's resource-server
+ * WebFilter has already authenticated the request (SecurityConfig requires
+ * .anyExchange().authenticated()), so a missing tenant claim here means the
+ * token itself is missing tenant scoping - not that the caller is anonymous.
+ * That case now fails closed (403) instead of silently skipping rate
+ * limiting, since silently skipping would let an under-scoped token bypass
+ * tenant enforcement entirely rather than surfacing the misconfiguration.
  */
 @Slf4j
 @RequiredArgsConstructor
 public class TenantRateLimiterGlobalFilter implements GlobalFilter, Ordered {
 
-    private static final String TENANT_HEADER = "X-Tenant-Id";
-
     private final TenantLeaseService leaseService;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String tenantId = exchange.getRequest().getHeaders().getFirst(TENANT_HEADER);
+        return TenantFilterFunctions.resolveTenant(exchange)
+                .flatMap(tenantId -> {
+                    exchange.getAttributes().put(TenantFilterFunctions.RESOLVED_TENANT_ATTR, tenantId);
+                    return leaseService.consume(tenantId)
+                            .flatMap(result -> {
+                                log.info("Tenant={} allowed={} remaining={} retryAfter={}",
+                                        tenantId, result.allowed(), result.remaining(), result.retryAfterSeconds());
 
-        if (tenantId == null || tenantId.isBlank()) {
-            return chain.filter(exchange);
-        }
+                                if (!result.allowed()) {
+                                    return rejectWithTooManyRequests(exchange, tenantId, result);
+                                }
+                                return chain.filter(exchange);
+                            });
+                })
+                .switchIfEmpty(Mono.defer(() -> rejectWithMissingTenant(exchange)));
+    }
 
-        return leaseService.consume(tenantId)
-                .flatMap(result -> {
-                    log.info("Tenant={} allowed={} remaining={} retryAfter={}",
-                            tenantId, result.allowed(), result.remaining(), result.retryAfterSeconds());
-
-                    if (!result.allowed()) {
-                        return rejectWithTooManyRequests(exchange, tenantId, result);
-                    }
-                    return chain.filter(exchange);
-                });
+    private Mono<Void> rejectWithMissingTenant(ServerWebExchange exchange) {
+        log.warn("Authenticated request had no resolvable tenant claim; rejecting. path={}",
+                exchange.getRequest().getPath());
+        ServerHttpResponse response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.FORBIDDEN);
+        byte[] body = "Request token is missing required tenant scoping".getBytes(StandardCharsets.UTF_8);
+        return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
     }
 
     private Mono<Void> rejectWithTooManyRequests(ServerWebExchange exchange, String tenantId, RateLimitResult result) {

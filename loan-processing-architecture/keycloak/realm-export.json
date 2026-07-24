@@ -1,0 +1,67 @@
+{
+  "realm": "loan-platform",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "loan-officer", "description": "Can create and view loans" },
+      { "name": "loan-admin", "description": "Can approve/override loan decisions" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "api-gateway",
+      "publicClient": false,
+      "secret": "changeit-in-non-dev",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:8085/*"],
+      "protocolMappers": [
+        {
+          "name": "tenant-attribute-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    { "clientId": "loan-service", "bearerOnly": true, "protocol": "openid-connect" }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "alice123", "temporary": false }],
+      "attributes": { "tenant": ["tenant-a"] },
+      "realmRoles": ["loan-officer"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "bob123", "temporary": false }],
+      "attributes": { "tenant": ["tenant-b"] },
+      "realmRoles": ["loan-officer", "loan-admin"]
+    }
+  ]
+}

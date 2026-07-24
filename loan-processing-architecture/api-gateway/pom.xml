@@ -31,7 +31,10 @@
             <groupId>org.springframework.cloud</groupId >
             <artifactId>spring-cloud-starter-loadbalancer</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
         <!-- Source: https://mvnrepository.com/artifact/com.giffing.bucket4j.spring.boot.starter/bucket4j-spring-boot-starter -->
         <!-- Redis (includes Lettuce) -->
         <dependency>
