@@ -2,6 +2,7 @@ from app.prompts.base import PromptBuilder
 from app.prompts.formatters import ExpenseTableFormatter
 from app.prompts.renderer import PromptRenderer
 from app.prompts.template import PromptTemplate
+from app.prompts.versions import get_prompt_template, PromptTemplateNames
 from app.schemas import ExpenseRequest
 
 
@@ -50,5 +51,5 @@ class ExpenseSummaryPrompt( PromptBuilder):
             "currency": request.currency,
             "expenses": ExpenseTableFormatter.to_markdown(request.expenses)
         }
-
-        return PromptRenderer.render(SUMMARY_TEMPLATE, variables, )
+        template = get_prompt_template(PromptTemplateNames.EXPENSE_SUMMARY, self.version)
+        return PromptRenderer.render(template, variables, )

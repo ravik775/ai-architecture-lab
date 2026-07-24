@@ -27,6 +27,7 @@ class LiteLLMService(LLMService):
                 timeout=settings.ai.timeout,
                 temperature=settings.ai.temperature,
                 max_tokens=settings.ai.max_tokens,
+                #reasoning_effort="low",
                 messages=[{
                     "role": "user",
                     "content": prompt
@@ -35,7 +36,7 @@ class LiteLLMService(LLMService):
 
             latency = time.perf_counter() - start_time
             content = response.choices[0].message.content
-
+            logger.error("LLM request failed %s", response)
             logger.info(
                 f"LLM request succeeded | Provider: {provider} | Model: {model} | Latency: {latency:.4f}s"
             )

@@ -10,12 +10,12 @@ class ExpenseService:
         self.llm_service = llm_service
 
     def analyze(self, request: ExpenseRequest) -> ExpenseResponse:
-        total_amount = sum(expense.amount for expense in request.expenses)
+        total_amount = sum(exp.amount * exp.quantity for exp in request.expenses)
         builder = PromptRegistry.get(PromptType.SUMMARY)
         prompt = builder.build(request)
-
+        logger.debug("Prompt length=%d\n%s\n", len(prompt), prompt)
         ai_summary = self.llm_service.chat(prompt)
-        logger.debug( "Prompt length=%d\n%s\n\n ai_summary: %s", len(prompt), prompt, ai_summary )
+        logger.debug( "ai_summary: %s",  ai_summary )
         return ExpenseResponse(
             tenant="Guest",
             total_expenses=len(request.expenses),
