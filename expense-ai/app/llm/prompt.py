@@ -36,3 +36,4 @@ class ExpensePromptBuilder:
         2. Total observations
         3. Savings suggestions
         """
+        return prompt
