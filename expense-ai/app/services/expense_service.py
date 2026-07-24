@@ -1,4 +1,4 @@
-from app.schemas import ExpenseRequest, ExpenseResponse
+from app.schemas import ExpenseRequest, ExpenseResponse, AIExpenseAnalysis
 from app.llm.base import LLMService
 import logging
 from app.prompts.registry import PromptRegistry, PromptType
@@ -14,13 +14,15 @@ class ExpenseService:
         builder = PromptRegistry.get(PromptType.SUMMARY)
         prompt = builder.build(request)
         logger.debug("Prompt length=%d\n%s\n", len(prompt), prompt)
-        ai_summary = self.llm_service.chat(prompt)
-        logger.debug( "ai_summary: %s",  ai_summary )
+        #ai_analysis = self.llm_service.chat(prompt)
+        ai_analysis = self.llm_service.structured_chat( prompt=prompt, response_model=AIExpenseAnalysis  )
+        logger.debug( "ai_analysis: %s",  ai_analysis )
         return ExpenseResponse(
             tenant="Guest",
             total_expenses=len(request.expenses),
             total_amount=total_amount,
             currency=request.currency,
             status="ANALYZED",
-            summary=ai_summary,
+            summary=ai_analysis.summary,
+            suspicious=ai_analysis.suspicious,
         )

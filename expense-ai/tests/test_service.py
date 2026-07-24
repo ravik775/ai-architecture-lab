@@ -1,17 +1,13 @@
 from datetime import datetime, timezone
 
 from app.llm.base import LLMService
+from app.llm.mockllm_service import MockLLMService
 from app.schemas import Expense, ExpenseRequest
 from app.services.expense_service import ExpenseService
 
 
-class FakeLLMService(LLMService):
-    def chat(self, prompt: str) -> str:
-        return "Fake AI summary"
-
-
 def test_expense_service_analyze():
-    service = ExpenseService(llm_service=FakeLLMService())
+    service = ExpenseService(llm_service=MockLLMService())
 
     request = ExpenseRequest(
         submitted_by="Jane Smith",
@@ -30,4 +26,4 @@ def test_expense_service_analyze():
     assert response.total_amount == 300.0
     assert response.currency == "USD"
     assert response.status == "ANALYZED"
-    assert response.summary == "Fake AI summary"
+    assert response.summary == "Expenses analyzed successfully."

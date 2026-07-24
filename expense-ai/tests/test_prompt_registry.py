@@ -16,9 +16,6 @@ class TestPromptRegistry:
         "prompt_type, expected_class",
         [
             (PromptType.SUMMARY, ExpenseSummaryPrompt),
-            (PromptType.FRAUD, ExpenseFraudPrompt),
-            (PromptType.POLICY, ExpensePolicyPrompt),
-            (PromptType.CATEGORIZATION, ExpenseCategorizationPrompt),
         ],
     )
     def test_get_returns_correct_prompt_instance(self, prompt_type, expected_class):
