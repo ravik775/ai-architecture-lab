@@ -5,6 +5,12 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, AfterValidator
 
 
+class HealthResponse(BaseModel):
+    status: str
+    provider: str
+    model: str
+
+
 def validate_not_in_future( value: datetime) -> datetime:
     # Use timezone.utc if your datetimes are timezone-aware
     if value > (datetime.now(timezone.utc) + timedelta(seconds=5)):

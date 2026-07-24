@@ -1,4 +1,4 @@
-from app.config import settings
+from app.config import settings, Providers
 from app.llm.litellm_service import LiteLLMService
 from app.llm.mockllm_service import MockLLMService
 from app.llm.base import LLMService
@@ -7,11 +7,11 @@ class LLMFactory:
 
     @staticmethod
     def create() -> LLMService:
-        match settings.provider:
-            case "litellm":
+        match settings.ai.llm_provider:
+            case Providers.LITELLM:
                 return LiteLLMService()
-            case "mock":
+            case Providers.MOCK:
                 return MockLLMService()
             case _:
-                raise ValueError(f"Unsupported provider: {settings.provider}")
+                raise ValueError(f"Unsupported provider: {settings.ai.llm_provider}")
 
