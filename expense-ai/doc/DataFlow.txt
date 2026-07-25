@@ -1,0 +1,22 @@
+Client
+    |
+    | ExpenseRequest
+    |
+FastAPI Router
+    |
+    | analysis_id
+    | submitted_date
+    | tenant
+    |
+ExpenseService
+    |
+    | total_amount
+    |
+LangGraph
+    |
+    | summary
+    | category
+    |
+LiteLLM
+    |
+    | token_usage

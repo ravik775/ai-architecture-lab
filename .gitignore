@@ -6,7 +6,7 @@ __pycache__/
 .mvn/**
 **/mvnw
 **/mvnw.cmd
-
+**/repomix*.xml
 # C extensions
 *.so
 
