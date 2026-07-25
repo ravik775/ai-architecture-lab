@@ -1,4 +1,3 @@
-fastapi
 uvicorn
 pydantic
 pydantic-settings
@@ -24,3 +23,5 @@ opentelemetry-instrumentation-fastapi
 pytest
 pandas==3.0.5
 tabulate==0.10.0
+starlette==1.3.1
+fastapi==0.140.0

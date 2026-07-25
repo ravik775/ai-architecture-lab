@@ -19,20 +19,29 @@ class AISettings(BaseModel):
     retry_backoff: float = 1.0
 
 class Logging(BaseModel):
-    log_prompts: bool = True
+    log_prompts: bool = False
     log_responses: bool = False
     log_token_usage: bool = True
+    prompt_preview_chars: int = 300
 
 
 class IntegrationSettings(BaseModel):
     huggingface_api_key: str | None = None
     github_token: str | None = None
 
+
+class Observability(BaseModel):
+    tracing_enabled:bool = True
+    metrics_enabled:bool = True
+    console_metric_exporter_enabled:bool = False
+    console_trace_exporter_enabled:bool = False
+
 class Settings(BaseSettings):
     environment: str = "dev"
     ai: AISettings = AISettings()
     integration: IntegrationSettings = IntegrationSettings()
-
+    logging: Logging = Logging()
+    observability: Observability = Observability()
     model_config = SettingsConfigDict(
         env_file=os.getenv("ENV_FILE", ".env"),
         env_file_encoding="utf-8",
