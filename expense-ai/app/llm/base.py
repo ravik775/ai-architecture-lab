@@ -1,15 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import TypeVar
-from pydantic import BaseModel
-from app.ai.models import AIRequest
-from app.ai.models import ProviderResponse
-
-T = TypeVar("T", bound=BaseModel)
+from app.ai.models import AIRequest, ExecutionContext
+from app.ai.models import ProviderResponse, ResponseModel
 
 class LLMService(ABC):
 
     @abstractmethod
-    def invoke(self, request: AIRequest, response_model: type[T]) -> ProviderResponse[T]:
+    def invoke(self, context: ExecutionContext, request: AIRequest, response_model: type[ResponseModel]) -> ProviderResponse[ResponseModel]:
         """
        Executes a single LLM request.
 

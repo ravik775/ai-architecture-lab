@@ -1,9 +1,11 @@
 from typing import Any
 
+from app.ai.models import TokenUsage
+
 
 def estimate_llm_cost_usd(
     model: str,
-    usage: dict[str, int] | None,
+    usage: TokenUsage | None,
     model_costs: dict[str, dict[str, Any]] | None,
 ) -> float | None:
     if not usage or not model_costs:
@@ -13,8 +15,8 @@ def estimate_llm_cost_usd(
     if not pricing:
         return None
 
-    prompt_tokens = usage.get("prompt_tokens", 0)
-    completion_tokens = usage.get("completion_tokens", 0)
+    prompt_tokens = usage.prompt_tokens
+    completion_tokens = usage.completion_tokens
     input_cost = pricing.get("input_cost_per_token", 0)
     output_cost = pricing.get("output_cost_per_token", 0)
 

@@ -2,6 +2,9 @@ import uvicorn
 import logging
 from fastapi import FastAPI
 
+from app.ai.providers import ProviderRegistry
+from app.ai.models import Provider
+from app.config import settings
 from app.handlers import register_exception_handlers
 from app.observability.middleware import RequestContextMiddleware
 from app.observability.metrics import configure_metrics
@@ -22,7 +25,6 @@ configure_metrics()
 register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(expense_router)
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

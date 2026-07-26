@@ -1,17 +1,17 @@
-from app.config import settings, Providers
+from app.config import settings, LLMImplementation
+from app.llm.base import LLMService
 from app.llm.litellm_service import LiteLLMService
 from app.llm.mockllm_service import MockLLMService
-from app.llm.base import LLMService
+
 
 class LLMFactory:
 
     @staticmethod
     def create() -> LLMService:
-        match settings.ai.llm_provider:
-            case Providers.LITELLM:
+        match settings.runtime.implementation:
+            case LLMImplementation.LiteLLM:
                 return LiteLLMService()
-            case Providers.MOCK:
+            case LLMImplementation.MOCKLLM:
                 return MockLLMService()
             case _:
-                raise ValueError(f"Unsupported provider: {settings.ai.llm_provider}")
-
+                raise ValueError("Unsupported runtime implementation")

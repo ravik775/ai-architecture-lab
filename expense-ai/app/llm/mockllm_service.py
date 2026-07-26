@@ -1,11 +1,24 @@
-from app.llm.base import LLMService, T
+from app.llm.base import LLMService
+from app.ai.models import ResponseModel
+
+
+from abc import ABC, abstractmethod
+from app.ai.models import AIRequest
+from app.ai.models import ProviderResponse, ResponseModel
 
 class MockLLMService(LLMService):
-    def chat(self, prompt: str) -> str:
-       return "Mock"
 
-    def structured_chat(self, prompt: str, response_model: type[T]) -> T:
-        return response_model.model_validate(
+    def invoke(self, request: AIRequest, response_model: type[ResponseModel]) -> ProviderResponse[ResponseModel]:
+       """
+       Executes a single LLM request.
+
+       Providers should NOT perform logging,
+       metrics or tracing.
+
+       They only communicate with the provider
+       and return ProviderResponse.
+       """
+       return response_model.model_validate(
             {
                 "summary": "Expenses analyzed successfully.",
                 "largest_category": "Infrastructure",

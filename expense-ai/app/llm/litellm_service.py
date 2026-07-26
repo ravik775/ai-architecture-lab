@@ -4,10 +4,10 @@ from litellm import completion
 from litellm import exceptions as litellm_exceptions
 from pydantic import ValidationError
 
-from app.ai.models import AIRequest, ProviderResponse
+from app.ai.models import AIRequest, ProviderResponse, TokenUsage, ResponseModel, ExecutionContext
 from app.config import settings
 from app.exceptions import LLMProviderError
-from app.llm.base import LLMService, T
+from app.llm.base import LLMService
 
 
 class LiteLLMService(LLMService):
@@ -19,16 +19,18 @@ class LiteLLMService(LLMService):
         litellm_exceptions.APIConnectionError,
     )
 
-    def invoke(self, request: AIRequest, response_model: type[T] ) -> ProviderResponse[T]:
+    def invoke(self, context: ExecutionContext, request: AIRequest, response_model: type[ResponseModel] ) -> ProviderResponse[ResponseModel]:
         schema = response_model.model_json_schema()
         start = time.perf_counter()
         try:
+            provider = context.provider
+            rt = settings.runtime
             response = completion(
-                model=settings.ai.llm_model,
-                api_key=settings.ai.model_api_key,
-                timeout=settings.ai.timeout,
-                temperature=0,
-                max_tokens=settings.ai.max_tokens,
+                model=provider.model,
+                api_key=provider.api_key,
+                timeout=rt.timeout_seconds,
+                temperature=rt.temperature,
+                max_tokens=rt.max_tokens,
                 messages=[
                     {
                         "role": "user",
@@ -52,8 +54,8 @@ class LiteLLMService(LLMService):
             result = response_model.model_validate_json(content)
             return ProviderResponse(
                 content=result,
-                provider=settings.ai.llm_provider,
-                model=settings.ai.llm_model,
+                provider=provider.name,
+                model=provider.model,
                 latency_ms=latency_ms,
                 usage=self._extract_usage(response),
             )
@@ -69,21 +71,19 @@ class LiteLLMService(LLMService):
             ) from e
 
     @staticmethod
-    def _extract_usage(response) -> dict[str, int] | None:
+    def _extract_usage(response) -> TokenUsage | None:
         usage = getattr(response, "usage", None)
+        if usage:
+            if isinstance(usage, dict):
+                return TokenUsage(
+                    prompt_tokens=int(usage.get("prompt_tokens", 0)),
+                    completion_tokens=int(usage.get("completion_tokens", 0)),
+                    total_tokens=int(usage.get("total_tokens", 0)),
+                )
 
-        if usage is None:
-            return None
-
-        keys = ("prompt_tokens", "completion_tokens", "total_tokens")
-
-        if isinstance(usage, dict):
-            return {
-                key: int(usage.get(key, 0))
-                for key in keys
-            }
-
-        return {
-            key: int(getattr(usage, key, 0))
-            for key in keys
-        }
+            return TokenUsage(
+                prompt_tokens=int(getattr(usage, "prompt_tokens", 0)),
+                completion_tokens=int(getattr(usage, "completion_tokens", 0)),
+                total_tokens=int(getattr(usage, "total_tokens", 0)),
+            )
+        return None

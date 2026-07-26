@@ -10,6 +10,6 @@ router = APIRouter(tags=["Health"])
 def health() -> HealthResponse:
     return HealthResponse(
         status="UP",
-        provider=settings.ai.llm_provider,
-        model=settings.ai.llm_model,
+        provider="***",
+        model="***",
     )
