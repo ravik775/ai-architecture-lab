@@ -18,12 +18,15 @@ class ProviderRegistry:
                 return
 
             for provider in settings.providers:
+                if not provider.enabled:
+                    continue
                 cls._providers.append(
                     Provider(
                         name=provider.name,
                         model=provider.model,
                         api_key=provider.api_key,
                         priority=provider.priority,
+                        base_url=provider.base_url,
                         enabled=provider.enabled,
                     )
                 )

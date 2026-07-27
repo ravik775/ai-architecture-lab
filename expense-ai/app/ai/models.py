@@ -34,6 +34,7 @@ class Provider:
     model: str
     api_key: str
     priority: int = 0
+    base_url: str | None = None
     enabled: bool = True
 
 @dataclass(slots=True)

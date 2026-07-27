@@ -2,9 +2,6 @@ import uvicorn
 import logging
 from fastapi import FastAPI
 
-from app.ai.providers import ProviderRegistry
-from app.ai.models import Provider
-from app.config import settings
 from app.handlers import register_exception_handlers
 from app.observability.middleware import RequestContextMiddleware
 from app.observability.metrics import configure_metrics
@@ -14,6 +11,7 @@ from app.routers.health import router as health_router
 
 # Configure global logging level
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.getLogger("expense_ai").setLevel(logging.INFO)
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 logging.getLogger("litellm").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)

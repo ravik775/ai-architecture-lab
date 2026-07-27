@@ -4,7 +4,9 @@ from app.config import settings
 from app.observability.logging import log_info
 from app.prompts.registry import PromptRegistry, PromptType
 from app.schemas import ExpenseRequest, ExpenseResponse, AIExpenseAnalysis
+from opentelemetry import trace
 
+tracer = trace.get_tracer("expense-ai")
 class ExpenseService:
     """Business service responsible for expense analysis."""
 
@@ -12,36 +14,39 @@ class ExpenseService:
         self.runtime = ai_runtime
 
     def analyze(self, request: ExpenseRequest) -> ExpenseResponse:
+        with tracer.start_as_current_span("expense.service.analyze") as span:
+            span.set_attribute("expense.count", len(request.expenses))
+            span.set_attribute("expense.currency", request.currency)
 
-        total_amount = sum(expense.amount * expense.quantity  for expense in request.expenses )
+            total_amount = sum(expense.amount * expense.quantity  for expense in request.expenses )
 
-        log_info(
-            "expense.analysis.started",
-            submitted_by=request.submitted_by,
-            currency=request.currency,
-            expense_count=len(request.expenses),
-            total_amount=total_amount,
-        )
+            log_info(
+                "expense.analysis.started",
+                submitted_by=request.submitted_by,
+                currency=request.currency,
+                expense_count=len(request.expenses),
+                total_amount=total_amount,
+            )
 
-        builder = PromptRegistry.get(PromptType.SUMMARY)
-        prompt = builder.build(request)
+            builder = PromptRegistry.get(PromptType.SUMMARY)
+            prompt = builder.build(request)
 
-        ai_request = AIRequest(prompt=prompt)
-        ai_analysis = self.runtime.invoke(ai_request, ExpenseResponse)
+            ai_request = AIRequest(prompt=prompt)
+            ai_analysis = self.runtime.invoke(ai_request, ExpenseResponse)
 
-        log_info(
-            "expense.analysis.completed",
-            status="ANALYZED",
-            suspicious_count=len(ai_analysis.suspicious),
-            largest_category=ai_analysis.largest_category,
-        )
+            log_info(
+                "expense.analysis.completed",
+                status="ANALYZED",
+                suspicious_count=len(ai_analysis.suspicious),
+                largest_category=ai_analysis.largest_category,
+            )
 
-        return ExpenseResponse(
-            tenant="Guest",
-            total_expenses=len(request.expenses),
-            total_amount=total_amount,
-            currency=request.currency,
-            status="ANALYZED",
-            summary=ai_analysis.summary,
-            suspicious=ai_analysis.suspicious,
-        )
+            return ExpenseResponse(
+                tenant="Guest",
+                total_expenses=len(request.expenses),
+                total_amount=total_amount,
+                currency=request.currency,
+                status="ANALYZED",
+                summary=ai_analysis.summary,
+                suspicious=ai_analysis.suspicious,
+            )

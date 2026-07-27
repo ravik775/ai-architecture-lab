@@ -15,7 +15,9 @@ from app.llm.base import LLMService
 from app.observability.cost import estimate_llm_cost_usd
 from app.observability.logging import log_error, log_info
 from app.observability.metrics import record_cost, record_llm_success, record_token_usage
+from opentelemetry import trace
 
+tracer = trace.get_tracer("expense-ai")
 
 class AIRuntime:
 
@@ -32,25 +34,15 @@ class AIRuntime:
     def invoke(self, request: AIRequest, response_model: type[ResponseModel]) -> ResponseModel:
         if not request.prompt:
             raise ValueError("Prompt is required.")
-
         context = ExecutionContext()
-        log_info("runtime.execution.started", execution_id=str(context.execution_id))
-
-        try:
+        with tracer.start_as_current_span("ai.runtime.invoke") as span:
+            span.set_attribute("ai.execution_id", str(context.execution_id))
+            span.set_attribute("ai.response_model", response_model.__name__)
             handler = lambda: self.llm_service.invoke(context, request, response_model )
             provider_response = self._pipeline.execute(context, handler)
-            estimated_cost = estimate_llm_cost_usd(provider_response.model, provider_response.usage, model_cost)
-
-            record_llm_success(provider_response.provider, provider_response.model, provider_response.latency_ms,)
-            record_token_usage(provider_response.provider, provider_response.model, provider_response.usage,)
-            record_cost(provider_response.provider, provider_response.model, estimated_cost,)
-
-            log_info("runtime.execution.completed", execution_id=str(context.execution_id),
-                     provider=provider_response.provider, model=provider_response.model,latency_ms=provider_response.latency_ms,)
-
+            span.set_attribute("llm.provider", provider_response.provider)
+            span.set_attribute("llm.model", provider_response.model)
+            span.set_attribute("llm.latency_ms", provider_response.latency_ms)
             return provider_response.content
-        except Exception as ex:
-            log_error("runtime.execution.failed", execution_id=str(context.execution_id), error=str(ex))
-            raise
 
 
