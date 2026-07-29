@@ -1,23 +1,30 @@
 import time
-from litellm import completion, exceptions as litellm_exceptions, model_cost
+from typing import Any
+
+from litellm import completion
+from litellm import exceptions as litellm_exceptions
+from opentelemetry import trace
 from pydantic import ValidationError
+
+from app.ai.models import (
+    AIRequest,
+    ExecutionContext,
+    ProviderResponse,
+    ResponseModel,
+    TokenUsage,
+)
 from app.config import settings
 from app.exceptions import LLMProviderError
-from app.llm.base import LLMService, T
-from app.observability.cost import estimate_llm_cost_usd
-from app.observability.logging import log_error, log_info, log_warning
+from app.llm.base import LLMService
 from app.observability.metrics import (
-    record_cost,
-    record_llm_success,
-    record_retry,
-    record_token_usage,
+    record_llm_failure,
     record_validation_failure,
 )
 
+tracer = trace.get_tracer("expense-ai")
+
 
 class LiteLLMService(LLMService):
-    """Provider-agnostic implementation backed by LiteLLM."""
-
     LITELLM_EXCEPTIONS = (
         litellm_exceptions.RateLimitError,
         litellm_exceptions.AuthenticationError,
@@ -25,143 +32,136 @@ class LiteLLMService(LLMService):
         litellm_exceptions.APIConnectionError,
     )
 
-    def chat(self, prompt: str) -> str:
-        return self._execute_completion(prompt=prompt)
+    def invoke(
+        self,
+        context: ExecutionContext,
+        request: AIRequest,
+        response_model: type[ResponseModel],
+    ) -> ProviderResponse[ResponseModel]:
+        provider = context.provider
+        if provider is None:
+            raise LLMProviderError("No LLM provider selected.")
 
-    def structured_chat(self, prompt: str, response_model: type[T]) -> T:
-        max_attempts = max(1, settings.ai.max_retries + 1)
-        schema = response_model.model_json_schema()
-        last_error: Exception | None = None
-        prompt_preview = (prompt[: settings.logging.prompt_preview_chars] if settings.logging.log_prompts else None)
-        provider, model = settings.ai.llm_provider, settings.ai.llm_model
-        log_info(
-            "llm.structured.request.started",
-            provider=provider,
-            model=model,
-            response_schema=response_model.__name__,
-            prompt_length=len(prompt),
-            max_attempts=max_attempts,
-            prompt_preview=prompt_preview
-        )
+        started_at = time.perf_counter()
 
-        for attempt in range(1, max_attempts + 1):
+        with tracer.start_as_current_span("llm.provider.call") as span:
+            self._set_request_span_attributes(span, context)
+
             try:
-                current_prompt = self._build_structured_prompt(prompt, last_error)
-                response, latency_ms, usage = self._execute_call(
-                    prompt=current_prompt,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {"name": response_model.__name__, "schema": schema, "strict": True},
-                    },
+                response = completion(
+                    **self._build_completion_params(provider, request, response_model)
                 )
 
-                content = response.choices[0].message.content
-                if not content or not content.strip():
-                    raise LLMProviderError("LLM returned an empty structured response.")
+                latency_ms = self._elapsed_ms(started_at)
+                content = self._extract_content(response)
+                result = response_model.model_validate_json(content)
+                usage = self._extract_usage(response)
 
-                result = (
-                    response_model.model_validate(content)
-                    if isinstance(content, dict)
-                    else response_model.model_validate_json(content)
-                )
+                self._set_success_span_attributes(span, usage)
 
-                self._record_success_metrics(provider, model, usage, latency_ms)
-
-                log_info(
-                    "llm.structured.request.completed",
-                    provider=provider,
-                    model=model,
-                    attempt=attempt,
+                return ProviderResponse(
+                    content=result,
+                    provider=provider.name,
+                    model=provider.model,
                     latency_ms=latency_ms,
-                    validation_status="success",
+                    usage=usage,
                 )
-                return result
 
-            except (ValidationError, *self.LITELLM_EXCEPTIONS, Exception) as exc:
-                last_error = exc
-                is_val = isinstance(exc, ValidationError)
-                record_validation_failure(provider, model)
+            except ValidationError as exc:
+                record_validation_failure(provider.name, provider.model)
+                self._mark_span_failure(span, exc)
+                raise LLMProviderError(
+                    "Structured response validation failed."
+                ) from exc
 
-                if attempt < max_attempts:
-                    record_retry(provider, model, "validation_failure" if is_val else "provider_failure")
-
-                log_warning(
-                    f"llm.structured.{'validation' if is_val else 'request'}.failed",
-                    provider=provider,
-                    model=model,
-                    attempt=attempt,
-                    max_attempts=max_attempts,
-                    error=str(exc),
-                )
-                if attempt >= max_attempts:
-                    break
-                time.sleep(settings.ai.retry_backoff * attempt)
-
-        log_error("llm.structured.request.exhausted", provider=provider, model=model, max_attempts=max_attempts,
-                  error=str(last_error))
-        raise LLMProviderError(f"LiteLLM structured output failed: {last_error}")
-
-    def _execute_completion(self, prompt: str, response_format: dict | None = None) -> str:
-        provider, model = settings.ai.llm_provider, settings.ai.llm_model
-        start_time = time.perf_counter()
-
-        try:
-            kwargs = {
-                "model": model,
-                "api_key": settings.ai.model_api_key,
-                "timeout": settings.ai.timeout,
-                "temperature": settings.ai.temperature if not response_format else 0,
-                "max_tokens": settings.ai.max_tokens,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-            if response_format:
-                kwargs["response_format"] = response_format
-
-            response = completion(**kwargs)
-            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-            content = response.choices[0].message.content
-
-            if not content or not content.strip():
-                raise LLMProviderError("LLM returned an empty response.")
-            return content
-
-        except self.LITELLM_EXCEPTIONS as e:
-            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-            log_error("llm.chat.request.failed", provider=provider, model=model, latency_ms=latency_ms, error=str(e))
-            raise LLMProviderError(f"LiteLLM provider error: {e}") from e
-
-    def _execute_call(self, prompt: str, response_format: dict):
-        start_time = time.perf_counter()
-        response = completion(
-            model=settings.ai.llm_model,
-            api_key=settings.ai.model_api_key,
-            timeout=settings.ai.timeout,
-            temperature=0,
-            max_tokens=settings.ai.max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-            response_format=response_format,
-        )
-        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-        usage = self._extract_usage(response)
-        return response, latency_ms, usage
+            except self.LITELLM_EXCEPTIONS as exc:
+                record_llm_failure(provider.name, provider.model, type(exc).__name__)
+                self._mark_span_failure(span, exc)
+                raise LLMProviderError("LiteLLM provider error.") from exc
 
     @staticmethod
-    def _record_success_metrics(provider: str, model: str, usage: dict | None, latency_ms: float):
-        estimated_cost = estimate_llm_cost_usd(model, usage, model_costs=model_cost)
-        record_llm_success(provider, model, latency_ms)
-        record_token_usage(provider, model, usage)
-        record_cost(provider, model, estimated_cost)
+    def _build_completion_params(
+        provider,
+        request: AIRequest,
+        response_model: type[ResponseModel],
+    ) -> dict[str, Any]:
+        rt = settings.runtime
+
+        return {
+            "model": provider.model,
+            "api_key": provider.api_key,
+            "api_base": provider.base_url,
+            "timeout": rt.timeout_seconds,
+            "temperature": rt.temperature,
+            "max_tokens": rt.max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": request.prompt,
+                }
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": response_model.model_json_schema(),
+                    "strict": True,
+                },
+            },
+        }
 
     @staticmethod
-    def _build_structured_prompt(prompt: str, last_error: Exception | None) -> str:
-        if not last_error:
-            return prompt
-        return f"{prompt}\n\nPrevious response failed schema validation. Error: {last_error}. Return valid JSON only."
+    def _extract_content(response) -> str:
+        content = response.choices[0].message.content
+        if not content:
+            raise LLMProviderError("Empty response from provider.")
+        return content
 
     @staticmethod
-    def _extract_usage(response) -> dict[str, int] | None:
+    def _extract_usage(response) -> TokenUsage | None:
         usage = getattr(response, "usage", None)
         if not usage:
             return None
-        keys = ("prompt_tokens", "completion_tokens", "total_tokens")
-        return {k: (usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)) for k in keys}
+
+        if isinstance(usage, dict):
+            return TokenUsage(
+                prompt_tokens=int(usage.get("prompt_tokens", 0)),
+                completion_tokens=int(usage.get("completion_tokens", 0)),
+                total_tokens=int(usage.get("total_tokens", 0)),
+            )
+
+        return TokenUsage(
+            prompt_tokens=int(getattr(usage, "prompt_tokens", 0)),
+            completion_tokens=int(getattr(usage, "completion_tokens", 0)),
+            total_tokens=int(getattr(usage, "total_tokens", 0)),
+        )
+
+    @staticmethod
+    def _set_request_span_attributes(span, context: ExecutionContext) -> None:
+        provider = context.provider
+
+        span.set_attribute("llm.provider", provider.name)
+        span.set_attribute("llm.model", provider.model)
+        span.set_attribute("llm.base_url", provider.base_url or "litellm_default")
+        span.set_attribute("llm.attempt", context.attempt)
+
+    @staticmethod
+    def _set_success_span_attributes(span, usage: TokenUsage | None) -> None:
+        span.set_attribute("llm.status", "success")
+
+        if usage is None:
+            return
+
+        span.set_attribute("llm.prompt_tokens", usage.prompt_tokens)
+        span.set_attribute("llm.completion_tokens", usage.completion_tokens)
+        span.set_attribute("llm.total_tokens", usage.total_tokens)
+
+    @staticmethod
+    def _mark_span_failure(span, exc: Exception) -> None:
+        span.record_exception(exc)
+        span.set_attribute("llm.status", "failure")
+        span.set_attribute("error.type", type(exc).__name__)
+
+    @staticmethod
+    def _elapsed_ms(started_at: float) -> float:
+        return round((time.perf_counter() - started_at) * 1000, 2)

@@ -53,5 +53,6 @@ class ExpenseResponse(BaseModel):
     currency: str
     status: str
     summary: str = ""
+    largest_category: str = ""
     suspicious: list[str] = Field(default_factory=list)
 

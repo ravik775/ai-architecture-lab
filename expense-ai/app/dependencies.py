@@ -1,5 +1,6 @@
 from fastapi import Depends
 
+from app.ai.runtime import AIRuntime
 from app.llm.base import LLMService
 from app.services.expense_service import ExpenseService
 from app.llm.factory import LLMFactory
@@ -17,5 +18,5 @@ def get_expense_service(llm: LLMService = Depends(get_llm_service)) -> ExpenseSe
     - Logger
     - Metrics
     """
-
-    return ExpenseService(llm)
+    ai_runtime = AIRuntime(llm)
+    return ExpenseService(ai_runtime)

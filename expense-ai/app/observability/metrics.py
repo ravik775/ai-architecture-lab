@@ -1,3 +1,4 @@
+from app.ai.models import TokenUsage
 from app.config import settings
 
 
@@ -84,26 +85,20 @@ def record_retry(provider: str, model: str, reason: str) -> None:
     )
 
 
-def record_token_usage(provider: str, model: str, usage: dict[str, int] | None) -> None:
-    if not usage:
+def record_token_usage(provider: str, model: str, usage: TokenUsage | None) -> None:
+    if usage is None:
         return
-
     _ensure_initialized()
-    labels = {"provider": str(provider), "model": model}
-    for token_type in ("prompt_tokens", "completion_tokens", "total_tokens"):
-        value = usage.get(token_type)
-        if value is not None:
-            _token_counter.add(value, {**labels, "token_type": token_type})
+    labels = {"provider": provider, "model": model, }
+    for token_type, value in usage.items().items():
+        _token_counter.add(value, {**labels, "token_type": token_type}, )
 
 
 def record_cost(provider: str, model: str, cost_usd: float | None) -> None:
     if cost_usd is None:
         return
     _ensure_initialized()
-    _cost_counter.add(
-        cost_usd,
-        {"provider": str(provider), "model": model, "currency": "USD"},
-    )
+    _cost_counter.add(cost_usd,  {"provider": str(provider), "model": model, "currency": "USD"},)
 
 
 def _initialize_instruments() -> None:
