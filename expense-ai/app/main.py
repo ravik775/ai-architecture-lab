@@ -10,7 +10,7 @@ from app.routers.expense import router as expense_router
 from app.routers.health import router as health_router
 
 # Configure global logging level
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",force=True,)
 logging.getLogger("expense_ai").setLevel(logging.INFO)
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 logging.getLogger("litellm").setLevel(logging.WARNING)

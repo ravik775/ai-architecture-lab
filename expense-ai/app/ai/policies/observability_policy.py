@@ -24,6 +24,7 @@ class ObservabilityPolicy(Policy):
       - Tracing (future)
     """
     priority: int = 10
+    name = "observability"
 
     def execute(self,  context: ExecutionContext, next_handler: ExecutionHandler,) -> ProviderResponse:
         started = time.perf_counter()

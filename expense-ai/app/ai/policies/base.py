@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Callable
-
+import logging
 from app.ai.models import ExecutionContext
 from app.ai.models import ProviderResponse, ResponseModel
 
@@ -14,6 +14,14 @@ class Policy(ABC):
     before()/after() hooks.
     """
     priority: int = 100
+    name: str = 'policy'
+    registry: dict[str, type["Policy"]] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__()
+        Policy.registry[cls.name] = cls
+        print(f"Registered {cls.name} policy")
+
     @abstractmethod
     def execute(self, context: ExecutionContext, next_handler: ExecutionHandler) -> ProviderResponse[ResponseModel]:
         pass

@@ -9,6 +9,7 @@ from app.observability.metrics import record_retry
 
 class RetryPolicy(Policy):
     priority: int = 30
+    name = 'retry'
 
     def _before_sleep(self, context: ExecutionContext):
         def callback(retry_state: RetryCallState) -> None:

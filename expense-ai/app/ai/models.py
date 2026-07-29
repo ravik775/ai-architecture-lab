@@ -46,6 +46,7 @@ class ExecutionContext:
         It only tracks runtime execution state.
     """
     provider: Provider = None
+    prompt: str = None
     execution_id: UUID = field(default_factory=uuid.uuid4)
     started_at: datetime = field(default_factory=datetime.now)
     attempt: int = 0

@@ -53,7 +53,7 @@ class LiteLLMService(LLMService):
                 )
 
                 latency_ms = self._elapsed_ms(started_at)
-                content = self._extract_content(response)
+                content = self._extract_content(response, provider)
                 result = response_model.model_validate_json(content)
                 usage = self._extract_usage(response)
 
@@ -111,9 +111,10 @@ class LiteLLMService(LLMService):
         }
 
     @staticmethod
-    def _extract_content(response) -> str:
+    def _extract_content(response, provider) -> str:
         content = response.choices[0].message.content
         if not content:
+            record_llm_failure(provider.name, provider.model, "EmptyResponse")
             raise LLMProviderError("Empty response from provider.")
         return content
 

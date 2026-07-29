@@ -3,7 +3,7 @@ environment: dev02
 providers:
   - name: openrouter
     model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
-    base_url: https://openrouter.ai/api/v1
+
 
   - name: gpt-oss
     model: openrouter/openai/gpt-oss-20b
@@ -13,6 +13,16 @@ providers:
   - name: ollama
     model: ollama_chat/llama3.2:3b
     base_url: http://localhost:11434
+    enabled: false
+
+  - name: omniroute
+    model: ollama_chat/llama3.2:3b
+    base_url: http://localhost:9000
+    enabled: false
+
+  - name: nvidia
+    model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+    base_url: https://integrate.api.nvidia.com/v1/chat/completions
     enabled: false
 
 runtime:
@@ -41,3 +51,12 @@ circuit_breaker:
   failure_threshold: 5
   reset_timeout: 60
   success_threshold: 5
+
+pipeline:
+  policies:
+    - observability
+    - guardrail
+    - fallback
+    - retry
+    - circuit_breaker
+    - timeout

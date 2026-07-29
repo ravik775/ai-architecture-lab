@@ -12,3 +12,6 @@ class LLMTimeoutError(Exception):
 
 class LLMError(Exception):
     pass
+
+class GuardrailViolation(Exception):
+    pass

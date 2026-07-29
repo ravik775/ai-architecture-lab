@@ -2,7 +2,7 @@ from threading import Lock
 
 from pybreaker import CircuitBreaker
 
-from app.ai.models import ExecutionContext
+from app.ai.models import ExecutionContext, ProviderResponse, ResponseModel
 from app.ai.policies.base import Policy, ExecutionHandler
 from app.config import settings
 
@@ -42,7 +42,8 @@ class CircuitBreakerRegistry:
         return provider_name in cls._breakers
 
 class CircuitBreakerPolicy(Policy):
-
-    def execute(self, context: ExecutionContext, next_handler: ExecutionHandler):
+    priority = 40
+    name = 'circuit_breaker'
+    def execute(self, context: ExecutionContext, next_handler: ExecutionHandler) -> ProviderResponse[ResponseModel]:
         breaker = CircuitBreakerRegistry.get_breaker(context.provider.name)
         return breaker.call(next_handler)

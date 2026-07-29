@@ -18,6 +18,10 @@ class LLMImplementation(str, Enum):
     LiteLLM = "LiteLLM"
     MOCKLLM = "MockLLM"
 
+class PipelineSettings(BaseModel):
+    policies: list[str] = Field(default_factory=list)
+
+
 class ProviderSettings(BaseModel):
     name: str
     model: str
@@ -67,8 +71,7 @@ class CircuitBreakerSettings(BaseModel):
 
 
 class Settings(BaseSettings):
-    environment: str = "dev"
-
+    pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     providers: list[ProviderSettings] = Field(default_factory=list)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
@@ -108,4 +111,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-print(settings.environment)
