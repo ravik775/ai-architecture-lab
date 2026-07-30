@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from app.ai.models import PromptOptions
 from app.schemas import ExpenseRequest
 
 
@@ -9,5 +10,5 @@ class PromptBuilder(ABC):
         self.version = version
 
     @abstractmethod
-    def build(self, request: ExpenseRequest) -> str:
+    def build(self, request: ExpenseRequest, options: PromptOptions) -> str:
         pass

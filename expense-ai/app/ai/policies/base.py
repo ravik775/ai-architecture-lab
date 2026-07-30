@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Callable
 import logging
 from app.ai.models import ExecutionContext
-from app.ai.models import ProviderResponse, ResponseModel
+from app.ai.models import ProviderResponse, TResponse
 
-ExecutionHandler = Callable[[], ProviderResponse[ResponseModel]]
+ExecutionHandler = Callable[[], ProviderResponse[TResponse]]
 
 class Policy(ABC):
     """
@@ -20,8 +20,7 @@ class Policy(ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__()
         Policy.registry[cls.name] = cls
-        print(f"Registered {cls.name} policy")
 
     @abstractmethod
-    def execute(self, context: ExecutionContext, next_handler: ExecutionHandler) -> ProviderResponse[ResponseModel]:
+    def execute(self, context: ExecutionContext, next_handler: ExecutionHandler) -> ProviderResponse[TResponse]:
         pass

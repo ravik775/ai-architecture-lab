@@ -4,7 +4,6 @@ providers:
   - name: openrouter
     model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
 
-
   - name: gpt-oss
     model: openrouter/openai/gpt-oss-20b
     base_url: https://openrouter.ai/api/v1
@@ -55,9 +54,10 @@ circuit_breaker:
 pipeline:
   policies:
     - observability
+    - fallback
+    - prompt_preparation
     - guardrail
     - cache
-    - fallback
     - retry
     - circuit_breaker
     - timeout

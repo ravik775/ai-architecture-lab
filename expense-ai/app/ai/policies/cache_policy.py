@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from cachetools import TTLCache
-from app.ai.models import ExecutionContext, ProviderResponse, ResponseModel
+from app.ai.models import ExecutionContext, ProviderResponse, TResponse
 from app.ai.policies.base import Policy, ExecutionHandler
 from app.config import settings
 
@@ -28,11 +28,11 @@ class CachePolicy(Policy):
         """Generates a SHA256 cache key based on provider, model, and prompt."""
         provider = context.provider.name
         model = context.provider.model
-        prompt = context.prompt
+        prompt = context.request.prompt
         raw_string = f"{provider}:{model}:{prompt}"
         return hashlib.sha256(raw_string.encode("utf-8")).hexdigest()
 
-    def execute(self, context: ExecutionContext, next_handler: ExecutionHandler) -> ProviderResponse[ResponseModel]:
+    def execute(self, context: ExecutionContext, next_handler: ExecutionHandler) -> ProviderResponse[TResponse]:
         if not self.enabled:
             return next_handler()
 

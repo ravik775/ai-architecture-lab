@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from app.ai.models import AIRequest, ExecutionContext
-from app.ai.models import ProviderResponse, ResponseModel
+from app.ai.models import ProviderResponse, TResponse
 
 class LLMService(ABC):
 
     @abstractmethod
-    def invoke(self, context: ExecutionContext, request: AIRequest, response_model: type[ResponseModel]) -> ProviderResponse[ResponseModel]:
+    def invoke(self, context: ExecutionContext, request: AIRequest) -> ProviderResponse:
         """
        Executes a single LLM request.
 

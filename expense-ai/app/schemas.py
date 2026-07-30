@@ -38,7 +38,10 @@ class Expense(BaseModel):
     category: str | None = None
     notes: str | None = None
 
-class ExpenseRequest(BaseModel):
+class AppRequest(BaseModel):
+    pass
+
+class ExpenseRequest(AppRequest):
     submitted_by: str = Field(min_length=3, max_length=100)
     currency: str = Field(min_length=3, max_length=3, default="INR")
     submitted_date: NotFutureDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))

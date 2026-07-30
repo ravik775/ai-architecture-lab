@@ -15,3 +15,6 @@ class LLMError(Exception):
 
 class GuardrailViolation(Exception):
     pass
+
+class StructuredOutputError(Exception):
+    pass

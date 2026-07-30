@@ -34,7 +34,7 @@ class ProviderRegistry:
                         api_key=provider.api_key,
                         priority=provider.priority,
                         base_url=provider.base_url,
-                        enabled=provider.enabled,
+                        enabled=provider.enabled
                     )
                 )
 

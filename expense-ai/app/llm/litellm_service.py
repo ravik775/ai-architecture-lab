@@ -4,25 +4,21 @@ from typing import Any
 from litellm import completion
 from litellm import exceptions as litellm_exceptions
 from opentelemetry import trace
-from pydantic import ValidationError
 
 from app.ai.models import (
     AIRequest,
     ExecutionContext,
+    Provider,
     ProviderResponse,
-    ResponseModel,
     TokenUsage,
+    TResponse,
 )
 from app.config import settings
 from app.exceptions import LLMProviderError
+from app.observability.metrics import record_llm_failure
 from app.llm.base import LLMService
-from app.observability.metrics import (
-    record_llm_failure,
-    record_validation_failure,
-)
 
 tracer = trace.get_tracer("expense-ai")
-
 
 class LiteLLMService(LLMService):
     LITELLM_EXCEPTIONS = (
@@ -32,62 +28,58 @@ class LiteLLMService(LLMService):
         litellm_exceptions.APIConnectionError,
     )
 
-    def invoke(
-        self,
-        context: ExecutionContext,
-        request: AIRequest,
-        response_model: type[ResponseModel],
-    ) -> ProviderResponse[ResponseModel]:
+    def invoke(self, context: ExecutionContext, request: AIRequest) -> ProviderResponse:
         provider = context.provider
-        if provider is None:
+        if not provider:
             raise LLMProviderError("No LLM provider selected.")
 
         started_at = time.perf_counter()
 
-        with tracer.start_as_current_span("llm.provider.call") as span:
+        with (tracer.start_as_current_span("llm.provider.call") as span):
             self._set_request_span_attributes(span, context)
 
             try:
-                response = completion(
-                    **self._build_completion_params(provider, request, response_model)
-                )
+                # Build completion parameters cleanly
+                params = self._build_completion_params(provider, request, context.response_model)
+                response = completion(**params)
+
+                # Extract message payload safely
+                choice = response.choices[0]
+                message = getattr(choice, "message", None)
+                if message:
+                    parsed = getattr(message, "parsed", None)
+                    content = getattr(message, "content", None)
+                else:
+                    parsed = content = None
+                if parsed is None and content is None:
+                    record_llm_failure(provider.name, provider.model, "EmptyResponse")
+                    raise LLMProviderError("Empty response from provider.")
 
                 latency_ms = self._elapsed_ms(started_at)
-                content = self._extract_content(response, provider)
-                result = response_model.model_validate_json(content)
                 usage = self._extract_usage(response)
-
                 self._set_success_span_attributes(span, usage)
 
-                return ProviderResponse(
-                    content=result,
-                    provider=provider.name,
-                    model=provider.model,
-                    latency_ms=latency_ms,
-                    usage=usage,
-                )
-
-            except ValidationError as exc:
-                record_validation_failure(provider.name, provider.model)
-                self._mark_span_failure(span, exc)
-                raise LLMProviderError(
-                    "Structured response validation failed."
-                ) from exc
+                return ProviderResponse(content=content,parsed=parsed, provider=provider.name, model=provider.model,
+                                        latency_ms=latency_ms, usage=usage )
 
             except self.LITELLM_EXCEPTIONS as exc:
                 record_llm_failure(provider.name, provider.model, type(exc).__name__)
                 self._mark_span_failure(span, exc)
-                raise LLMProviderError("LiteLLM provider error.") from exc
+                raise LLMProviderError(
+                    f"LiteLLM provider error: {exc.message if hasattr(exc, 'message') else str(exc)}") from exc
+            except Exception as exc:
+                # Catch unexpected general exceptions to prevent unhandled tracking gaps
+                if not isinstance(exc, LLMProviderError):
+                    record_llm_failure(provider.name, provider.model, type(exc).__name__)
+                    self._mark_span_failure(span, exc)
+                    raise LLMProviderError(f"Unexpected LLM error: {str(exc)}") from exc
+                raise
+
 
     @staticmethod
-    def _build_completion_params(
-        provider,
-        request: AIRequest,
-        response_model: type[ResponseModel],
-    ) -> dict[str, Any]:
+    def _build_completion_params(provider: Provider, request: AIRequest, response_model: type[TResponse] | None,) -> dict[str, Any]:
         rt = settings.runtime
-
-        return {
+        args: dict[str, Any] = {
             "model": provider.model,
             "api_key": provider.api_key,
             "api_base": provider.base_url,
@@ -100,23 +92,9 @@ class LiteLLMService(LLMService):
                     "content": request.prompt,
                 }
             ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": response_model.__name__,
-                    "schema": response_model.model_json_schema(),
-                    "strict": True,
-                },
-            },
+            "response_format": response_model
         }
-
-    @staticmethod
-    def _extract_content(response, provider) -> str:
-        content = response.choices[0].message.content
-        if not content:
-            record_llm_failure(provider.name, provider.model, "EmptyResponse")
-            raise LLMProviderError("Empty response from provider.")
-        return content
+        return args
 
     @staticmethod
     def _extract_usage(response) -> TokenUsage | None:
@@ -124,27 +102,30 @@ class LiteLLMService(LLMService):
         if not usage:
             return None
 
-        if isinstance(usage, dict):
-            return TokenUsage(
-                prompt_tokens=int(usage.get("prompt_tokens", 0)),
-                completion_tokens=int(usage.get("completion_tokens", 0)),
-                total_tokens=int(usage.get("total_tokens", 0)),
-            )
+        # Handle both dictionary-like and object attribute usage patterns cleanly
+        get_val = lambda attr: usage.get(attr, 0) if isinstance(usage, dict) else getattr(usage, attr, 0)
+
+        prompt_tokens = int(get_val("prompt_tokens"))
+        completion_tokens = int(get_val("completion_tokens"))
+        total_tokens = int(get_val("total_tokens"))
+
+        if prompt_tokens == 0 and completion_tokens == 0 and total_tokens == 0:
+            return None
 
         return TokenUsage(
-            prompt_tokens=int(getattr(usage, "prompt_tokens", 0)),
-            completion_tokens=int(getattr(usage, "completion_tokens", 0)),
-            total_tokens=int(getattr(usage, "total_tokens", 0)),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
         )
 
     @staticmethod
     def _set_request_span_attributes(span, context: ExecutionContext) -> None:
         provider = context.provider
-
         span.set_attribute("llm.provider", provider.name)
         span.set_attribute("llm.model", provider.model)
         span.set_attribute("llm.base_url", provider.base_url or "litellm_default")
         span.set_attribute("llm.attempt", context.attempt)
+
 
     @staticmethod
     def _set_success_span_attributes(span, usage: TokenUsage | None) -> None:
@@ -157,11 +138,13 @@ class LiteLLMService(LLMService):
         span.set_attribute("llm.completion_tokens", usage.completion_tokens)
         span.set_attribute("llm.total_tokens", usage.total_tokens)
 
+
     @staticmethod
     def _mark_span_failure(span, exc: Exception) -> None:
         span.record_exception(exc)
         span.set_attribute("llm.status", "failure")
         span.set_attribute("error.type", type(exc).__name__)
+
 
     @staticmethod
     def _elapsed_ms(started_at: float) -> float:

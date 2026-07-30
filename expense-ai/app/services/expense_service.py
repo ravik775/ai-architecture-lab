@@ -1,8 +1,6 @@
 from app.ai.runtime import AIRuntime
-from app.ai.models import AIRequest
-from app.config import settings
+from app.ai.models import AIRequest, PromptType
 from app.observability.logging import log_info
-from app.prompts.registry import PromptRegistry, PromptType
 from app.schemas import ExpenseRequest, ExpenseResponse, AIExpenseAnalysis
 from opentelemetry import trace
 
@@ -27,11 +25,7 @@ class ExpenseService:
                 expense_count=len(request.expenses),
                 total_amount=total_amount,
             )
-
-            builder = PromptRegistry.get(PromptType.SUMMARY)
-            prompt = builder.build(request)
-
-            ai_request = AIRequest(prompt=prompt)
+            ai_request = AIRequest[ExpenseRequest](request=request, prompt_type=PromptType.SUMMARY)
             ai_analysis = self.runtime.invoke(ai_request, ExpenseResponse)
 
             log_info(

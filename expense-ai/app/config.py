@@ -32,6 +32,7 @@ class ProviderSettings(BaseModel):
     priority: int = Field(default=100, ge=0, le=100)
     enabled: bool = True
 
+
     @model_validator(mode="after")
     def populate_api_key(self):
         self.api_key = self.api_key or getenv(f"{self.name.upper()}_API_KEY")
@@ -43,7 +44,7 @@ class RuntimeSettings(BaseModel):
     temperature: float = Field(default=0.0, ge=0.0)
     max_tokens: int = Field(default=2000, gt=0)
     timeout_seconds: int = Field(default=30, gt=0)
-
+    include_examples: bool = Field(default=True, gt=0)
     stream: bool = False
 
     max_retries: int = Field(default=3, ge=0)

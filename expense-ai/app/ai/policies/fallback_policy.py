@@ -8,7 +8,7 @@ from app.observability.logging import log_info, log_warning
 
 
 class FallbackPolicy(Policy):
-    priority = 20
+    priority = 15
     name = 'fallback'
     def execute(self, context: ExecutionContext, next_handler: ExecutionHandler):
         last_exception = None
