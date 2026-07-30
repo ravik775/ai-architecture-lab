@@ -5,18 +5,20 @@ POST http://localhost:8000/api/v1/expenses/analyze
 Content-Type: application/json
 
 {
-            "submitted_by": "John Doe",
-            "currency": "INR",
-            "expenses": [
-                {
-                    "description": "Future Flight",
-                    "amount": 100.0,
-                    "merchant": "Airline",
-                    "category": "Travel"
-                }
-            ]
+    "submitted_by": "John Doe",
+    "submitted_date": "2026-07-30T02:45:00Z",
+    "currency": "INR",
+    "expenses": [
+        {
+            "description": "Future Flight",
+            "amount": 100.0,
+            "quantity": 1,
+            "expense_date": "2026-07-30T02:45:00Z",
+            "merchant": "Airline",
+            "category": "Travel"
+        }
+    ]
 }
-
 
 ####
 

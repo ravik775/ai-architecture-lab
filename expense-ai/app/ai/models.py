@@ -70,3 +70,7 @@ class ProviderResponse(Generic[ResponseModel])  :
 
 
 
+@dataclass
+class CacheEntry:
+    response: ProviderResponse[ResponseModel]
+    expires_at: datetime
