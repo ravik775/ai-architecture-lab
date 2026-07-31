@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from typing import List, Annotated
+from typing import List, Annotated, TypedDict, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, AfterValidator, ConfigDict
@@ -52,3 +52,16 @@ class ExpenseResponse(BaseModel):
     requires_approval: bool = False
     suspicious: list[str] = Field(default_factory=list)
 
+
+class ApprovalActionPayload(BaseModel):
+    action: Literal["APPROVED", "REJECTED"]
+    reason: str | None = None
+
+class ExpenseApprovalState(TypedDict):
+    request: ExpenseRequest
+    analysis_id: UUID
+    response: ExpenseResponse | None
+    approval_required: bool
+    approval_reason: str | None
+    human_action: str | None
+    final_message: str | None

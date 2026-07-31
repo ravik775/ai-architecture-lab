@@ -3,11 +3,17 @@ environment: dev02
 providers:
   - name: openrouter
     model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+    enabled: false
 
-  - name: gpt-oss
+  - name: openrouter
     model: openrouter/openai/gpt-oss-20b
     base_url: https://openrouter.ai/api/v1
     enabled: false
+
+  - name: openrouter
+    model: openrouter/meta-llama/llama-3.3-70b-instruct
+    base_url: https://openrouter.ai/api/v1
+    enabled: true
 
   - name: ollama
     model: ollama_chat/llama3.2:3b

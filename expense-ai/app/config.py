@@ -81,14 +81,10 @@ class Settings(BaseSettings):
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
+    agentic_expense: bool = True
 
-    observability: ObservabilitySettings = Field(
-        default_factory=ObservabilitySettings
-    )
-
-    circuit_breaker: CircuitBreakerSettings = Field(
-        default_factory=CircuitBreakerSettings
-    )
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+    circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
 
     model_config = SettingsConfigDict(
         yaml_file= BASE_DIR / "application.yaml",

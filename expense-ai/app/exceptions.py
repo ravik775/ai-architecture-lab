@@ -10,6 +10,9 @@ class LLMConnectionError(Exception):
 class LLMTimeoutError(Exception):
     pass
 
+class LLMNotFoundError(Exception):
+    pass
+
 class LLMError(Exception):
     pass
 

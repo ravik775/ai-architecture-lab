@@ -1,8 +1,10 @@
 from fastapi import Depends
 
+from app.agents.expense_approval_graph import ExpenseApprovalGraph
 from app.ai.runtime import AIRuntime
+from app.config import settings
 from app.llm.base import LLMService
-from app.services.expense_service import ExpenseService
+from app.services.expense_service import ExpenseService, ExpenseServiceImpl
 from app.llm.factory import LLMFactory
 
 def get_llm_service()->LLMService:
@@ -18,5 +20,5 @@ def get_expense_service(llm: LLMService = Depends(get_llm_service)) -> ExpenseSe
     - Logger
     - Metrics
     """
-    ai_runtime = AIRuntime(llm)
-    return ExpenseService(ai_runtime)
+    expense_service: ExpenseService = ExpenseServiceImpl(AIRuntime(llm))
+    return ExpenseApprovalGraph(expense_service) if settings.agentic_expense else expense_service

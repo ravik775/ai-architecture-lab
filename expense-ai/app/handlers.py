@@ -1,31 +1,53 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from app.exceptions import LLMProviderError, GuardrailViolation, StructuredOutputError
+from app.exceptions import LLMProviderError, GuardrailViolation, StructuredOutputError, LLMNotFoundError
 from app.observability.context import get_request_id
 from app.observability.logging import log_error
 
-
-def _error_handler(request: Request, exc: Exception, content: dict, status_code: int) -> JSONResponse:
-    request_id = get_request_id() or "no-request-id"
-    content["request_id"] = request_id
-    return JSONResponse(status_code=status_code, content=content, headers={"X-Request-ID": request_id},)
-
-
-async def llm_provider_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    log_error("api.error.llm_provider", path=request.url.path, method=request.method, error= str(exc))
-
-    return _error_handler(request, exc, {
+# Configuration mapping exception types to response schemas and log details
+ERROR_CONFIG = {
+    LLMProviderError: {
+        "status_code": status.HTTP_502_BAD_GATEWAY,
         "error": "AI_PROVIDER_ERROR",
-        "message": "AI analysis is temporarily unavailable."}, 502)
-
-async def llm_guardrail_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    log_error("api.guardrail.rejected", path=request.url.path, method=request.method, reason= "blocked_phrase")
-    return _error_handler(request, exc, {
+        "message": "AI analysis is temporarily unavailable.",
+        "event": "api.error.llm_provider",
+    },
+    StructuredOutputError: {
+        "status_code": status.HTTP_502_BAD_GATEWAY,
+        "error": "AI_PROVIDER_ERROR",
+        "message": "AI analysis is temporarily unavailable.",
+        "event": "api.error.structured_output",
+    },
+    GuardrailViolation: {
+        "status_code": status.HTTP_400_BAD_REQUEST,
         "error": "PROMPT_REJECTED",
-        "message": "Input violates AI safety policy."}, 400)
+        "message": "Input violates AI safety policy.",
+        "event": "api.guardrail.rejected",
+    },
+    LLMNotFoundError: {
+        "status_code": status.HTTP_404_NOT_FOUND,
+        "error": "NOT_FOUND",
+        "message": None,  # Will fallback to str(exc)
+        "event": "api.error.not_found",
+    },
+}
+
+default_config = {
+        "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "error": "INTERNAL_SERVER_ERROR",
+        "message": "An unexpected error occurred.",
+        "event": "api.error.unhandled",
+    }
+
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Unified exception handler for all registered application errors."""
+    config = ERROR_CONFIG.get(type(exc), default_config)
+    log_error(config["event"], path=request.url.path, method=request.method, error=str(exc), ) # Log exception event cleanly
+    request_id = get_request_id() or "no-request-id"
+    payload = { "error": config["error"], "message": config["message"] or str(exc), "request_id": request_id, }
+    return JSONResponse(status_code=config["status_code"], content=payload, headers={"X-Request-ID": request_id}, )
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(LLMProviderError, llm_provider_error_handler)
-    app.add_exception_handler(StructuredOutputError, llm_provider_error_handler)
-    app.add_exception_handler(GuardrailViolation, llm_guardrail_error_handler)
+    for exc_type in ERROR_CONFIG:
+        app.add_exception_handler(exc_type, global_exception_handler)

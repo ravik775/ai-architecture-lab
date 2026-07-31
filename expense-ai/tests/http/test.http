@@ -21,7 +21,13 @@ Content-Type: application/json
 }
 
 ####
+# @timeout 120s
+POST http://localhost:8000/api/v1/expenses/ea8b9f86-5909-4128-8bbd-cff472e4dbfb/approve
+Content-Type: application/json
 
+{"action": "APPROVED", "reason":  "Expense as per plan"}
+####
+# @timeout 120s
 POST http://localhost:8000/api/v1/expenses/analyze
 Content-Type: application/json
 

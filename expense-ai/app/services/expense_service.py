@@ -1,17 +1,28 @@
+import uuid
+from abc import ABC, abstractmethod
+from uuid import UUID
+
 from app.ai.runtime import AIRuntime
 from app.ai.models import AIRequest, PromptType, AIExpenseAnalysis
 from app.observability.logging import log_info
 from app.schemas import ExpenseRequest, ExpenseResponse
 from opentelemetry import trace
 
+class ExpenseService(ABC):
+    @abstractmethod
+    def analyze(self, request: ExpenseRequest, analysis_id: UUID| None=None) -> ExpenseResponse:
+        pass
+
+
 tracer = trace.get_tracer("expense-ai")
-class ExpenseService:
+class ExpenseServiceImpl(ExpenseService):
     """Business service responsible for expense analysis."""
 
     def __init__(self, ai_runtime: AIRuntime):
         self.runtime = ai_runtime
 
-    def analyze(self, request: ExpenseRequest) -> ExpenseResponse:
+    def analyze(self, request: ExpenseRequest, analysis_id: UUID| None=None) -> ExpenseResponse:
+        analysis_id = analysis_id or uuid.uuid4()
         with tracer.start_as_current_span("expense.service.analyze") as span:
             span.set_attribute("expense.count", len(request.expenses))
             span.set_attribute("expense.currency", request.currency)
@@ -36,6 +47,7 @@ class ExpenseService:
             )
 
             return ExpenseResponse(
+                analysis_id=analysis_id,
                 tenant="Guest",
                 total_expenses=len(request.expenses),
                 total_amount=total_amount,
