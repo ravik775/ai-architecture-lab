@@ -3,124 +3,120 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.exceptions import LLMProviderError
+from app.ai.models import AIExpenseAnalysis, AIRequest, ExecutionContext, Provider
+from app.exceptions import LLMProviderError, StructuredOutputError
 from app.llm.litellm_service import LiteLLMService
 from app.llm.mockllm_service import MockLLMService
-from app.schemas import AIExpenseAnalysis, Expense, ExpenseRequest
-from app.services.expense_service import ExpenseService
+from app.llm.response_parser import ResponseParser
+from app.schemas import Expense, ExpenseRequest
 
 
-class FakeStructuredLLM:
-    def chat(self, prompt: str) -> str:
-        return "unused"
-
-    def structured_chat(self, prompt: str, response_model: type[AIExpenseAnalysis]):
-        return response_model.model_validate(
-            {
-                "summary": "Validated structured summary.",
-                "largest_category": "Travel",
-                "high_value_expenses": ["Hotel - 12000"],
-                "recommendations": ["Check policy limit."],
-                "suspicious": ["Hotel - 12000"],
-            }
-        )
-
-
-def test_expense_service_uses_structured_output():
-    service = ExpenseService(llm_service=FakeStructuredLLM())
-    request = ExpenseRequest(
-        submitted_by="Ravi",
-        currency="INR",
-        submitted_date=datetime.now(timezone.utc),
-        expenses=[
-            Expense(
-                description="Hotel stay",
-                amount=12000,
-                quantity=1,
-                merchant="Hotel ABC",
-                category="Travel",
-            )
-        ],
-    )
-
-    response = service.analyze(request)
-
-    assert response.summary == "Validated structured summary."
-    assert response.suspicious == ["Hotel - 12000"]
-    assert response.total_amount == 12000
-
-
-def test_mock_llm_structured_chat_returns_pydantic_model():
-    result = MockLLMService().structured_chat(
-        prompt="Analyze expenses",
-        response_model=AIExpenseAnalysis,
-    )
-
-    assert isinstance(result, AIExpenseAnalysis)
-    assert result.summary == "Expenses analyzed successfully."
-    assert result.suspicious == []
-
-
-def test_litellm_structured_chat_retries_after_invalid_response():
-    invalid_response = _completion_response('{"summary": ""}')
-    valid_response = _completion_response(
-        """
-{
-  "summary": "Valid summary",
-  "largest_category": "Travel",
-  "high_value_expenses": [],
-  "recommendations": [],
-  "suspicious": []
-}
-"""
-    )
-
-    with patch("app.llm.litellm_service.settings") as mock_settings, patch(
-        "app.llm.litellm_service.completion",
-        side_effect=[invalid_response, valid_response],
-    ) as mock_completion:
-        mock_settings.ai.llm_provider = "litellm"
-        mock_settings.ai.llm_model = "test-model"
-        mock_settings.ai.model_api_key = "test-key"
-        mock_settings.ai.timeout = 30
-        mock_settings.ai.max_tokens = 200
-        mock_settings.ai.max_retries = 1
-
-        result = LiteLLMService().structured_chat(
-            prompt="Analyze expenses",
-            response_model=AIExpenseAnalysis,
-        )
-
-    assert result.summary == "Valid summary"
-    assert mock_completion.call_count == 2
-
-
-def test_litellm_structured_chat_raises_after_retry_exhaustion():
-    invalid_response = _completion_response('{"summary": ""}')
-
-    with patch("app.llm.litellm_service.settings") as mock_settings, patch(
-        "app.llm.litellm_service.completion",
-        return_value=invalid_response,
-    ):
-        mock_settings.ai.llm_provider = "litellm"
-        mock_settings.ai.llm_model = "test-model"
-        mock_settings.ai.model_api_key = "test-key"
-        mock_settings.ai.timeout = 30
-        mock_settings.ai.max_tokens = 200
-        mock_settings.ai.max_retries = 1
-
-        with pytest.raises(LLMProviderError):
-            LiteLLMService().structured_chat(
-                prompt="Analyze expenses",
-                response_model=AIExpenseAnalysis,
-            )
-
-
-def _completion_response(content: str):
-    message = MagicMock()
-    message.content = content
-    choice = MagicMock()
-    choice.message = message
+def test_response_parser_accepts_valid_structured_json():
     response = MagicMock()
-    response.choices = [choice]
-    return response
+    response.parsed = None
+    response.content = """
+    {
+      "summary": "Validated structured summary.",
+      "largest_category": "Travel",
+      "policy_flags": [
+        "Hotel Approval Policy: Hotel amount requires review."
+      ],
+      "requires_approval": true,
+      "suspicious": ["Hotel - 12000"]
+    }
+    """
+
+    result = ResponseParser().parse(response, AIExpenseAnalysis)
+
+    assert result.summary == "Validated structured summary."
+    assert result.largest_category == "Travel"
+    assert result.policy_flags == [
+        "Hotel Approval Policy: Hotel amount requires review."
+    ]
+    assert result.requires_approval is True
+    assert result.suspicious == ["Hotel - 12000"]
+
+
+def test_response_parser_rejects_invalid_structured_json():
+    response = MagicMock()
+    response.parsed = None
+    response.content = '{"summary": ""}'
+
+    with pytest.raises(StructuredOutputError):
+        ResponseParser().parse(response, AIExpenseAnalysis)
+
+
+def test_mock_llm_service_returns_provider_response():
+    request = _ai_request()
+    context = _execution_context(
+        request=request,
+        provider=Provider(
+            name="mock",
+            model="mock-model",
+            api_key="",
+        ),
+    )
+
+    result = MockLLMService().invoke(context, request)
+
+    assert result.provider == "mock"
+    assert result.model == "mock-model"
+    assert result.content is None
+    assert result.parsed is not None
+    assert isinstance(result.parsed, AIExpenseAnalysis)
+    assert result.parsed.summary == "Expenses analyzed successfully."
+    assert result.parsed.largest_category == "Infrastructure"
+    assert result.parsed.policy_flags == []
+    assert result.parsed.requires_approval is False
+    assert result.parsed.suspicious == []
+
+
+def test_litellm_service_wraps_unexpected_provider_error():
+    request = _ai_request()
+    context = _execution_context(
+        request=request,
+        provider=Provider(
+            name="test-provider",
+            model="test-model",
+            api_key="test-key",
+        ),
+    )
+
+    with patch(
+            "app.llm.litellm_service.completion",
+            side_effect=Exception("provider failed"),
+    ):
+        with pytest.raises(LLMProviderError):
+            LiteLLMService().invoke(context, request)
+
+
+def _ai_request() -> AIRequest[ExpenseRequest]:
+    return AIRequest[ExpenseRequest](
+        request=ExpenseRequest(
+            submitted_by="Ravi",
+            currency="INR",
+            submitted_date=datetime.now(timezone.utc),
+            expenses=[
+                Expense(
+                    description="Hotel stay",
+                    amount=12000,
+                    quantity=1,
+                    merchant="Hotel ABC",
+                    category="Travel",
+                )
+            ],
+        ),
+        prompt="Analyze expenses",
+        prompt_type="summary",
+    )
+
+
+def _execution_context(
+        request: AIRequest[ExpenseRequest],
+        provider: Provider,
+) -> ExecutionContext:
+    return ExecutionContext(
+        request=request,
+        response_model=AIExpenseAnalysis,
+        provider=provider,
+    )

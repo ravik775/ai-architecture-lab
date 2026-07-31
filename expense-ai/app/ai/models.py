@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Generic, TypeVar, Type
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from app.schemas import AppRequest
 
 TAppRequest = TypeVar("TAppRequest", bound=AppRequest)
@@ -19,8 +19,45 @@ class AIRequest(BaseModel, Generic[TAppRequest]):
     prompt: str | None = None
     prompt_type: PromptType
 
+class AIExpenseAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(..., min_length=1)
+    largest_category: str = Field(..., min_length=1)
+    suspicious: list[str] = Field(default_factory=list)
+    policy_flags: list[str] = Field(default_factory=list,  description=(
+        "One item per distinct policy concern. "
+        "Each item should identify the policy name and the reason. "
+        "Use an empty list when there are no policy concerns."
+    ))
+    requires_approval: bool = False
+
 class AIResponse(BaseModel):
     content: str
+
+@dataclass(frozen=True, slots=True)
+class PolicyDocument:
+    id: str
+    title: str
+    category: str
+    content: str
+    source: str = "static-expense-policy"
+
+    def metadata(self) -> dict[str, str]:
+        return {
+            "title": self.title,
+            "category": self.category,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievedPolicy:
+    id: str
+    title: str
+    category: str
+    content: str
+    score: float | None = None
 
 
 @dataclass(slots=True)
@@ -49,6 +86,7 @@ class Provider:
 class PromptOptions:
     require_json_output: bool = True
     include_examples: bool = False
+    policy_context:str | None = None
 
 
 @dataclass(slots=True)
@@ -67,6 +105,7 @@ class ExecutionContext(Generic[TResponse]):
     started_at: datetime = field(default_factory=datetime.now)
     attempt: int = 0
     provider_index: int = 0
+    retrieved_context: list[Any] = field(default_factory=list)
 
 
 

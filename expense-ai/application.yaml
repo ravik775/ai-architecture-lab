@@ -27,7 +27,7 @@ providers:
 runtime:
     temperature: 0
     max_tokens: 4000
-    timeout_seconds: 30
+    timeout_seconds: 300
     priority: 1
     enabled: true
     stream: false
@@ -41,7 +41,7 @@ logging:
   prompt_preview_chars: 300
 
 observability:
-  tracing_enabled: false
+  tracing_enabled: true
   metrics_enabled: true
   console_metric_exporter_enabled: false
   console_trace_exporter_enabled: false
@@ -54,10 +54,17 @@ circuit_breaker:
 pipeline:
   policies:
     - observability
-    - fallback
+    - provider_selection
+    - retrieval
     - prompt_preparation
     - guardrail
     - cache
     - retry
     - circuit_breaker
     - timeout
+
+rag:
+  enabled: true
+  collection_name: expense_policies
+  persist_directory: .chroma
+  top_k: 3

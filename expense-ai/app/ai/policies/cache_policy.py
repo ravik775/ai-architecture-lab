@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class CachePolicy(Policy):
-    priority = 22
+    priority = 20
     name = 'cache'
     _shared_cache = None
     def __init__(self):

@@ -1,10 +1,9 @@
 import time
 from typing import Any
 
-from litellm import completion
+from litellm import completion, _turn_on_debug
 from litellm import exceptions as litellm_exceptions
 from opentelemetry import trace
-
 from app.ai.models import (
     AIRequest,
     ExecutionContext,
@@ -19,13 +18,16 @@ from app.observability.metrics import record_llm_failure
 from app.llm.base import LLMService
 
 tracer = trace.get_tracer("expense-ai")
-
+#   _turn_on_debug()
 class LiteLLMService(LLMService):
     LITELLM_EXCEPTIONS = (
         litellm_exceptions.RateLimitError,
         litellm_exceptions.AuthenticationError,
         litellm_exceptions.Timeout,
         litellm_exceptions.APIConnectionError,
+        litellm_exceptions.APIError,
+        litellm_exceptions.ServiceUnavailableError,
+        litellm_exceptions.BadRequestError,
     )
 
     def invoke(self, context: ExecutionContext, request: AIRequest) -> ProviderResponse:
@@ -69,9 +71,9 @@ class LiteLLMService(LLMService):
                     f"LiteLLM provider error: {exc.message if hasattr(exc, 'message') else str(exc)}") from exc
             except Exception as exc:
                 # Catch unexpected general exceptions to prevent unhandled tracking gaps
+                self._mark_span_failure(span, exc)
                 if not isinstance(exc, LLMProviderError):
                     record_llm_failure(provider.name, provider.model, type(exc).__name__)
-                    self._mark_span_failure(span, exc)
                     raise LLMProviderError(f"Unexpected LLM error: {str(exc)}") from exc
                 raise
 

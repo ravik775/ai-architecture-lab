@@ -46,3 +46,4 @@ class RetryPolicy(Policy):
             with attempt:
                 context.attempt += 1
                 return next_handler()
+        raise LLMProviderError("All Retries failed...")

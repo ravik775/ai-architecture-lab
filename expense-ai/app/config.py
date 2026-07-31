@@ -21,6 +21,11 @@ class LLMImplementation(str, Enum):
 class PipelineSettings(BaseModel):
     policies: list[str] = Field(default_factory=list)
 
+class RAGSettings(BaseModel):
+    enabled: bool = Field(default=True)
+    collection_name: str = Field(default="expense_policies", max_length=50)
+    persist_directory: str = ".chroma"
+    top_k: int = Field(default=3, gt=0, le=40)
 
 class ProviderSettings(BaseModel):
     name: str
@@ -31,7 +36,6 @@ class ProviderSettings(BaseModel):
 
     priority: int = Field(default=100, ge=0, le=100)
     enabled: bool = True
-
 
     @model_validator(mode="after")
     def populate_api_key(self):
@@ -76,6 +80,7 @@ class Settings(BaseSettings):
     providers: list[ProviderSettings] = Field(default_factory=list)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    rag: RAGSettings = Field(default_factory=RAGSettings)
 
     observability: ObservabilitySettings = Field(
         default_factory=ObservabilitySettings

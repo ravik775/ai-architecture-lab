@@ -4,7 +4,7 @@ from app.exceptions import GuardrailViolation
 
 
 class InputGuardrailPolicy(Policy):
-    priority = 20
+    priority = 18
     name = 'guardrail'
     BLOCKED_PHRASES = (
         "ignore previous instructions",

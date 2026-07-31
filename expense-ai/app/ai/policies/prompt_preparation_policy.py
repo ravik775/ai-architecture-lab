@@ -3,6 +3,7 @@ from app.ai.policies.base import ExecutionHandler, Policy
 from app.config import settings
 from app.prompts.registry import PromptRegistry
 from app.observability.logging import log_info
+from app.rag.chroma_retriever import format_retrieved_policies
 
 
 class PromptPreparationPolicy(Policy):
@@ -32,6 +33,7 @@ class PromptPreparationPolicy(Policy):
 
         options = PromptOptions(
             include_examples=settings.runtime.include_examples,
+            policy_context=format_retrieved_policies(context.retrieved_context)
         )
         request.prompt = prompt_builder.build(request.request, options)
         log_info("Prompt Generated.", prompt=request.prompt)

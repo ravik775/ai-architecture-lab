@@ -11,12 +11,8 @@ class ExpenseSummaryPrompt(PromptBuilder):
         variables = {
             "employee": request.submitted_by,
             "currency": request.currency,
-            "expenses": ExpenseTableFormatter.to_markdown(request.expenses)
-        }
-        variables = {
-            "employee": request.submitted_by,
-            "currency": request.currency,
-            "expenses": ExpenseTableFormatter.to_markdown(request.expenses)
+            "expenses": ExpenseTableFormatter.to_markdown(request.expenses),
+            "policy_context": options.policy_context or "No policy context provided."
         }
         template = get_prompt_template(PromptTemplateNames.EXPENSE_SUMMARY, self.version)
         return PromptRenderer.render(template, variables, options)

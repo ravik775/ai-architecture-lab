@@ -19,15 +19,6 @@ def validate_not_in_future( value: datetime) -> datetime:
 
 NotFutureDatetime = Annotated[datetime, AfterValidator(validate_not_in_future)]
 
-class AIExpenseAnalysis(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    summary: str = Field(...,min_length=1)
-    largest_category: str = Field(...)
-    high_value_expenses: list[str] = Field(...)
-    recommendations: list[str] = Field(...)
-    suspicious: list[str] = Field(...)
-
 class Expense(BaseModel):
     description: str = Field(min_length=3, max_length=100)
     amount: float = Field(gt=0)
@@ -57,5 +48,7 @@ class ExpenseResponse(BaseModel):
     status: str
     summary: str = ""
     largest_category: str = ""
+    policy_flags: list[str] = Field(default_factory=list)
+    requires_approval: bool = False
     suspicious: list[str] = Field(default_factory=list)
 

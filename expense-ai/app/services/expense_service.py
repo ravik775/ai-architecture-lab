@@ -1,7 +1,7 @@
 from app.ai.runtime import AIRuntime
-from app.ai.models import AIRequest, PromptType
+from app.ai.models import AIRequest, PromptType, AIExpenseAnalysis
 from app.observability.logging import log_info
-from app.schemas import ExpenseRequest, ExpenseResponse, AIExpenseAnalysis
+from app.schemas import ExpenseRequest, ExpenseResponse
 from opentelemetry import trace
 
 tracer = trace.get_tracer("expense-ai")
@@ -26,7 +26,7 @@ class ExpenseService:
                 total_amount=total_amount,
             )
             ai_request = AIRequest[ExpenseRequest](request=request, prompt_type=PromptType.SUMMARY)
-            ai_analysis = self.runtime.invoke(ai_request, ExpenseResponse)
+            ai_analysis = self.runtime.invoke(ai_request, AIExpenseAnalysis)
 
             log_info(
                 "expense.analysis.completed",
@@ -42,5 +42,8 @@ class ExpenseService:
                 currency=request.currency,
                 status="ANALYZED",
                 summary=ai_analysis.summary,
+                largest_category=ai_analysis.largest_category,
+                policy_flags=ai_analysis.policy_flags,
+                requires_approval=ai_analysis.requires_approval,
                 suspicious=ai_analysis.suspicious,
             )

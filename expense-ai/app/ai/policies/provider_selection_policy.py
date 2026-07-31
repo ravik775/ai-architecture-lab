@@ -9,7 +9,7 @@ from app.observability.logging import log_info, log_warning
 
 class FallbackPolicy(Policy):
     priority = 15
-    name = 'fallback'
+    name = 'provider_selection'
     def execute(self, context: ExecutionContext, next_handler: ExecutionHandler):
         last_exception = None
         for index, provider in enumerate(ProviderRegistry.providers(), start=1):
