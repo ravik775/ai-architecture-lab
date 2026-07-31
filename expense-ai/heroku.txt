@@ -1,0 +1,10 @@
+heroku config:set \
+  AGENTIC_EXPENSE=true \
+  DATABASE_SSLMODE=require \
+  RUNTIME_TIMEOUT_SECONDS=10 \
+  RUNTIME_MAX_RETRIES=1 \
+  RAG_PERSIST_DIRECTORY=/tmp/chroma \
+  OTEL_CONSOLE_TRACE_ENABLED=true \
+  LANGSMITH_TRACING=true \
+  LANGSMITH_PROJECT=expense-ai-heroku-demo \
+  -a <expense-ai-app-name>

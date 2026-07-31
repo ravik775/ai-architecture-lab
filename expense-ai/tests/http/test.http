@@ -1,7 +1,12 @@
-GET http://localhost:8000/health
+### Environment Variable
+@host = http://localhost:8000
 
-###
-POST http://localhost:8000/api/v1/expenses/analyze
+### 1. Health Check
+GET {{host}}/health
+
+### 2. Analyze Single Expense (Auto-creates analysis_id)
+# @name analyzeSingleExpense
+POST {{host}}/api/v1/expenses/analyze
 Content-Type: application/json
 
 {
@@ -20,15 +25,25 @@ Content-Type: application/json
     ]
 }
 
-####
+> {%
+    // Automatically stores the analysis_id of whichever request was just executed!
+    client.global.set("latest_analysis_id", response.body.analysis_id);
+%}
+
+### 3. Approve Expense (Uses dynamic analysis_id from request above)
 # @timeout 120s
-POST http://localhost:8000/api/v1/expenses/ea8b9f86-5909-4128-8bbd-cff472e4dbfb/approve
+POST {{host}}/api/v1/expenses/{{analyzeSingleExpense.response.body.analysis_id}}/approve
 Content-Type: application/json
 
-{"action": "APPROVED", "reason":  "Expense as per plan"}
-####
+{
+    "action": "APPROVED",
+    "reason": "Expense as per plan"
+}
+
+### 4. Analyze Large Expense Payload (10 Items - Requires Review)
+# @name analyzeLargeExpenses
 # @timeout 120s
-POST http://localhost:8000/api/v1/expenses/analyze
+POST {{host}}/api/v1/expenses/analyze
 Content-Type: application/json
 
 {
@@ -98,11 +113,12 @@ Content-Type: application/json
     ]
 }
 
-
-
-####
-
-POST http://localhost:8000/api/v1/expenses/analyze
+> {%
+    // Automatically stores the analysis_id of whichever request was just executed!
+    client.global.set("latest_analysis_id", response.body.analysis_id);
+%}
+### 5. Analyze Medium Expense Payload (4 Items)
+POST {{host}}/api/v1/expenses/analyze
 Content-Type: application/json
 
 {
@@ -134,4 +150,19 @@ Content-Type: application/json
             "category": "Software"
         }
     ]
+}
+
+> {%
+    // Automatically stores the analysis_id of whichever request was just executed!
+    client.global.set("latest_analysis_id", response.body.analysis_id);
+%}
+
+
+### 3. Approve Most Recent Expense
+POST {{host}}/api/v1/expenses/{{latest_analysis_id}}/approve
+Content-Type: application/json
+
+{
+    "action": "APPROVED",
+    "reason": "Most recent expense batch reviewed and approved"
 }

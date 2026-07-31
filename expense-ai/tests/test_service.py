@@ -27,5 +27,5 @@ def test_expense_service_analyze():
     assert response.total_expenses == 2
     assert response.total_amount == 300.0
     assert response.currency == "USD"
-    assert response.status == "ANALYZED"
-    assert response.summary == "Expenses analyzed successfully."
+    assert response.status == "APPROVED"
+    assert response.summary == "Expenses approved successfully."

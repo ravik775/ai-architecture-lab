@@ -38,7 +38,7 @@ class TestExpenseAPI:
         assert data["total_amount"] == 150.0
         assert data["currency"] == "INR"
         # FIX 2: Agentic workflow auto-approves valid low-value expenses
-        assert data["status"] in ("APPROVED", "ANALYZED")
+        assert data["status"] in ("APPROVED")
         assert "analysis_id" in data
 
     def test_analyze_expenses_future_submitted_date_error(self):

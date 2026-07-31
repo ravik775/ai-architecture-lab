@@ -5,7 +5,7 @@ from app.ai.models import AIRequest, ExecutionContext, ProviderResponse
 class MockLLMService(LLMService):
     def invoke(self, context: ExecutionContext, request: AIRequest) -> ProviderResponse:
         mock_data = {
-            "summary": "Expenses analyzed successfully.",
+            "summary": "Expenses approved successfully.",
             "largest_category": "Infrastructure",
             "policy_flags": [],
             "requires_approval": False,

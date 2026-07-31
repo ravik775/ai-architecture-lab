@@ -41,7 +41,7 @@ class ExpenseServiceImpl(ExpenseService):
 
             log_info(
                 "expense.analysis.completed",
-                status="ANALYZED",
+                status="APPROVED",
                 suspicious_count=len(ai_analysis.suspicious),
                 largest_category=ai_analysis.largest_category,
             )
@@ -52,7 +52,7 @@ class ExpenseServiceImpl(ExpenseService):
                 total_expenses=len(request.expenses),
                 total_amount=total_amount,
                 currency=request.currency,
-                status="ANALYZED",
+                status="APPROVED",
                 summary=ai_analysis.summary,
                 largest_category=ai_analysis.largest_category,
                 policy_flags=ai_analysis.policy_flags,

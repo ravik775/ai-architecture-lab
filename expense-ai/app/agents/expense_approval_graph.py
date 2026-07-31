@@ -1,9 +1,11 @@
 import uuid
+from functools import lru_cache
 from uuid import UUID
 
 from opentelemetry import trace
 from psycopg.rows import dict_row
 
+from app.config import Settings, settings
 from app.exceptions import LLMNotFoundError
 from app.schemas import ExpenseRequest, ExpenseResponse, ExpenseApprovalState
 from app.services.expense_service import ExpenseService
@@ -11,27 +13,41 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
-
-# Global database pool for checkpointer persistence
-DB_URI = "postgresql://myuser:mypassword@localhost:5432/expense_db"
-pool = ConnectionPool(conninfo=DB_URI, max_size=20, kwargs={"row_factory": dict_row})
-
 tracer = trace.get_tracer("expense-ai")
 
+@lru_cache(maxsize=1)
+def get_checkpointer_resources() -> tuple[ConnectionPool, PostgresSaver,]:
+    if not settings.data.database_url:
+        raise RuntimeError("Postgres is required for the agentic approval workflow.")
+    pool = ConnectionPool(conninfo=settings.data.database_url,
+        min_size=1, max_size=5, kwargs={"row_factory": dict_row, "sslmode": settings.data.database_sslmode},)
+    with pool.connection() as connection:
+        connection.autocommit = True
+        PostgresSaver(connection).setup()
+    return pool, PostgresSaver(pool)
 
+def close_checkpointer_resources() -> None:
+    """
+    Close the cached PostgreSQL connection pool.
+
+    Checking currsize avoids creating a pool during shutdown when the
+    application operated in basic mode.
+    """
+    if get_checkpointer_resources.cache_info().currsize == 0:
+        return
+
+    pool, _ = get_checkpointer_resources()
+
+    try:
+        pool.close()
+    finally:
+        get_checkpointer_resources.cache_clear()
 class ExpenseApprovalGraph(ExpenseService):
 
     def __init__(self, expense_service: ExpenseService):
         self.expense_service = expense_service
-        self.checkpointer = PostgresSaver(pool)
-        self._setup_checkpointer()
+        self.pool, self.checkpointer = get_checkpointer_resources()
         self.workflow = self._build()
-
-    def _setup_checkpointer(self):
-        """Ensures migrations run in autocommit mode to support CONCURRENTLY index creation."""
-        with pool.connection() as conn:
-            conn.autocommit = True
-            PostgresSaver(conn).setup()
 
     def _build(self) -> StateGraph:
         builder = StateGraph(ExpenseApprovalState)
@@ -69,8 +85,8 @@ class ExpenseApprovalGraph(ExpenseService):
         response: ExpenseResponse = state["response"]
         if response:
             reason = []
-            if response.total_expenses >= 1000:
-                reason.append(f"Total expenses: {response.total_expenses}")
+            if response.total_amount >= 10000:
+                reason.append(f"Total Amount: {response.total_amount}")
             if response.suspicious:
                 reason.append(f"Suspicious: {response.suspicious}")
             if response.policy_flags:
@@ -160,9 +176,9 @@ class ExpenseApprovalGraph(ExpenseService):
         # 3. Check if workflow is already completed (state_snapshot.next is empty)
         if not state_snapshot.next:
             # Workflow finished previously; return the finalized response directly from checkpointer
-            print(f"Workflow is already Completed... {analysis_id=}")
+            #print(f"Workflow is already Completed... {analysis_id=}")
             return state_snapshot.values["response"]
-        print(f"Workflow resumed... {analysis_id=}")
+        #print(f"Workflow resumed... {analysis_id=}")
         # 4. Resume execution safely if currently paused at interrupt
         final_state = self.workflow.invoke(Command(resume={"action": action}), config=config)
         return final_state["response"]

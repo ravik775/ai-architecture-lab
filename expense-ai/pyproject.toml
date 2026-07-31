@@ -1,7 +1,7 @@
 [project]
 name = "expense-ai"
 version = "0.1.0"
-description = "Add your description here"
+description = "Provider-agnostic agentic AI expense approval platform with ChromaDB RAG, LangGraph human approval workflows, PostgreSQL checkpointing, and OpenTelemetry observability."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -1,5 +1,9 @@
 environment: dev02
 
+data:
+  database_url:
+  database_sslmode: prefer
+
 providers:
   - name: openrouter
     model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
@@ -31,14 +35,12 @@ providers:
     enabled: false
 
 runtime:
+    timeout_seconds: 10
+    max_retries: 1
+    retry_backoff: 1.0
     temperature: 0
     max_tokens: 4000
-    timeout_seconds: 300
-    priority: 1
-    enabled: true
     stream: false
-    max_retries: 3
-    retry_backoff: 1.0
 
 logging:
   log_prompts: false

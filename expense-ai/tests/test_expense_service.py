@@ -66,7 +66,7 @@ def test_analyze_success(expense_service, mock_ai_runtime, sample_expense_reques
     assert response.total_expenses == 2
     assert response.total_amount == 2400.0
     assert response.currency == "INR"
-    assert response.status == "ANALYZED"
+    assert response.status == "APPROVED"
     assert response.summary == "Mocked AI Summary Response"
     assert response.largest_category == "Travel"
     assert response.policy_flags == [

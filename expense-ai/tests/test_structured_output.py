@@ -64,7 +64,7 @@ def test_mock_llm_service_returns_provider_response():
     assert result.content is None
     assert result.parsed is not None
     assert isinstance(result.parsed, AIExpenseAnalysis)
-    assert result.parsed.summary == "Expenses analyzed successfully."
+    assert result.parsed.summary == "Expenses approved successfully."
     assert result.parsed.largest_category == "Infrastructure"
     assert result.parsed.policy_flags == []
     assert result.parsed.requires_approval is False
