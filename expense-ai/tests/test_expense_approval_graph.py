@@ -1,5 +1,6 @@
 # tests/test_expense_approval_graph.py
 from datetime import datetime, timezone
+from uuid import UUID, uuid4
 import pytest
 from app.schemas import ExpenseRequest, ExpenseResponse, Expense
 from app.agents.expense_approval_graph import ExpenseApprovalGraph
@@ -11,12 +12,16 @@ class MockExpenseServiceImpl(ExpenseService):
         self.requires_approval = requires_approval
         self.total_amount = total_amount
 
-    def analyze(self, request: ExpenseRequest) -> ExpenseResponse:
+    def analyze(self, request: ExpenseRequest, analysis_id: UUID | None = None) -> ExpenseResponse:
         return ExpenseResponse(
             tenant="Guest",
             status="ANALYZED",
+            total_expenses=len(request.expenses),
             total_amount=self.total_amount,
-            requires_approval=self.requires_approval
+            currency=request.currency,
+            requires_approval=self.requires_approval,
+            # Generate a new UUID if analysis_id is None
+            analysis_id=analysis_id or uuid4()
         )
 
 

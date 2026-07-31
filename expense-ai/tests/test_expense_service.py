@@ -1,3 +1,4 @@
+# tests/test_expense_service.py
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -5,7 +6,8 @@ import pytest
 
 from app.ai.models import AIExpenseAnalysis
 from app.schemas import Expense, ExpenseRequest, ExpenseResponse
-from app.services.expense_service import ExpenseService
+# FIX: Import ExpenseServiceImpl alongside ExpenseService
+from app.services.expense_service import ExpenseService, ExpenseServiceImpl
 
 
 @pytest.fixture
@@ -24,8 +26,9 @@ def mock_ai_runtime():
 
 
 @pytest.fixture
-def expense_service(mock_ai_runtime):
-    return ExpenseService(ai_runtime=mock_ai_runtime)
+def expense_service(mock_ai_runtime) -> ExpenseService:
+    # FIX: Instantiate ExpenseServiceImpl instead of ExpenseService
+    return ExpenseServiceImpl(ai_runtime=mock_ai_runtime)
 
 
 @pytest.fixture
