@@ -1,0 +1,276 @@
+Why Understanding Local vs Remote LLM Execution Matters
+
+Production System Design and Solution Architect Interviews
+
+Understanding the separation between Model, Inference Engine, and
+Execution Location is one of the most valuable concepts for designing
+enterprise AI systems. Experienced architects rarely start by asking
+“Which model should we use?” Instead, they ask:
+
+-   Where should inference execute?
+-   Who owns the model?
+-   What are the latency, cost, security, and compliance requirements?
+-   How will the model be deployed, monitored, and upgraded?
+
+This mindset leads to better architectural decisions.
+
+------------------------------------------------------------------------
+
+The Three Layers
+
+    Application
+          |
+          v
+    Inference Engine
+          |
+          v
+    Model
+          |
+          v
+    Execution Location
+
+Examples:
+
+  Model          Engine                Location
+  -------------- --------------------- -----------------
+  Qwen2.5-7B     Transformers          Local GPU
+  Llama 3.1 8B   Hugging Face Router   Remote
+  GPT-4.1        OpenAI API            Remote
+  Llama 3.1      Ollama                Local
+  Qwen2.5        vLLM                  Local or Remote
+
+These layers are independent.
+
+------------------------------------------------------------------------
+
+Production System Design
+
+1. Deployment Strategy
+
+Choose where inference runs.
+
+Local
+
+Advantages - Lower latency - Data never leaves environment - Full
+control - Offline capable
+
+Disadvantages - GPU management - Scaling responsibility - Model
+upgrades - Higher infrastructure complexity
+
+Suitable for - Banking - Healthcare - Defense - On-prem deployments
+
+------------------------------------------------------------------------
+
+Remote
+
+Advantages - No GPU management - Easy scaling - Fast experimentation -
+Automatic model updates
+
+Disadvantages - Network latency - Vendor dependency - Data residency
+concerns - API costs
+
+Suitable for - SaaS - Internal copilots - Rapid prototyping - Startups
+
+------------------------------------------------------------------------
+
+2. Cost Optimization
+
+Architects compare:
+
+Remote API - Pay per token - No infrastructure
+
+Local - GPU CAPEX/OPEX - Better for sustained high volume
+
+Typical interview discussion: “When traffic reaches a level where GPU
+utilization is consistently high, hosting an open model locally with an
+engine such as vLLM can reduce long-term inference cost.”
+
+------------------------------------------------------------------------
+
+3. Latency
+
+Remote:
+
+    Client
+       |
+    Internet
+       |
+    Provider
+
+Local:
+
+    Client
+       |
+    Internal Network
+       |
+    GPU
+
+Remote adds network latency; local removes internet hops.
+
+------------------------------------------------------------------------
+
+4. Scalability
+
+Remote - Provider auto-scales
+
+Local - Kubernetes - Autoscaling - GPU scheduling - Load balancing -
+Model replicas
+
+------------------------------------------------------------------------
+
+5. Security
+
+Local - Sensitive data remains internal - Easier compliance
+
+Remote - Encryption in transit - Token management - Vendor security
+review - Data residency checks
+
+------------------------------------------------------------------------
+
+6. Disaster Recovery
+
+Production systems often implement:
+
+-   Primary remote provider
+-   Secondary provider
+-   Local fallback
+
+Example
+
+    OpenAI
+         |
+    Failure
+         v
+    HF Router
+         |
+    Failure
+         v
+    Local vLLM
+
+------------------------------------------------------------------------
+
+7. Vendor Independence
+
+Abstract the model provider behind an interface.
+
+    Application
+          |
+    LLM Service
+          |
+    +-----------+
+    | OpenAI    |
+    | HF Router |
+    | Ollama    |
+    | vLLM      |
+    +-----------+
+
+Only the adapter changes.
+
+------------------------------------------------------------------------
+
+8. Multi-Model Routing
+
+Production systems often choose a model by task.
+
+Example
+
+Classification → Small model
+
+RAG → Mid-size model
+
+Code generation → Coding model
+
+Reasoning → Larger reasoning model
+
+------------------------------------------------------------------------
+
+9. Observability
+
+Monitor:
+
+-   Latency
+-   Token usage
+-   Error rate
+-   Tool usage
+-   Cost
+-   Model version
+-   Prompt version
+-   Cache hit ratio
+
+------------------------------------------------------------------------
+
+10. AI Gateway
+
+An AI Gateway centralizes:
+
+-   Authentication
+-   Rate limiting
+-   Prompt logging
+-   Provider routing
+-   Cost controls
+-   Guardrails
+-   Failover
+
+Applications call the gateway instead of individual providers.
+
+------------------------------------------------------------------------
+
+Solution Architect Interview Talking Points
+
+Explain architecture in terms of trade-offs rather than products.
+
+Good answers discuss:
+
+-   Latency
+-   Throughput
+-   Availability
+-   Cost
+-   Compliance
+-   Vendor lock-in
+-   Scalability
+-   Security
+-   Monitoring
+-   Disaster recovery
+
+Example response:
+
+“I separate the solution into the application, inference engine, model,
+and execution location. This lets us swap providers without changing
+business logic, optimize latency and cost independently, and meet
+compliance requirements by choosing local or remote inference based on
+workload.”
+
+------------------------------------------------------------------------
+
+Common Interview Questions
+
+-   When would you choose local inference over an API?
+-   How do you avoid vendor lock-in?
+-   How would you migrate from OpenAI to an open model?
+-   How do you support multiple providers?
+-   How would you implement failover between providers?
+-   How do you optimize AI inference cost?
+-   How would you monitor LLM applications?
+-   When would you use an AI Gateway?
+-   How would you secure prompts and model responses?
+-   How do you choose between remote APIs and self-hosted models?
+
+------------------------------------------------------------------------
+
+Key Takeaway
+
+Think in layers:
+
+    Business Application
+            |
+    LLM Abstraction Layer
+            |
+    Inference Engine
+            |
+    Model
+            |
+    Execution Location
+
+This layered architecture enables portability, easier maintenance, lower
+vendor lock-in, better scalability, and informed trade-offs around cost,
+performance, security, and compliance.
