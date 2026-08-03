@@ -14,13 +14,10 @@ docker compose config --format json | python -c "import json,sys; from urllib.pa
 
 ---------- Run ---------
 Set-ExecutionPolicy -Scope Process Bypass
-heroku login
+
 
 $env:OPENROUTER_API_KEY = "<your-openrouter-key>"
 $env:LANGSMITH_API_KEY = "<your-langsmith-key>"
-
-.\deploy-heroku.ps1 -AppName "expense-ai-ravi"
-
 
 
 ------------ The effective non-secret configuration is: ------
@@ -34,5 +31,5 @@ OBSERVABILITY__TRACING_ENABLED=true
 OBSERVABILITY__METRICS_ENABLED=true
 OBSERVABILITY__CONSOLE_METRIC_EXPORTER_ENABLED=true
 LANGSMITH_TRACING=true
-LANGSMITH_PROJECT=expense-ai-heroku-demo
+LANGSMITH_PROJECT=expense-ai-oracle-demo
 CONFIG_DEBUG=false

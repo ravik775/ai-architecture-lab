@@ -53,6 +53,7 @@ observability:
   metrics_enabled: true
   console_metric_exporter_enabled: false
   console_trace_exporter_enabled: false
+  otlp_exporter_enabled: true
 
 circuit_breaker:
   failure_threshold: 5

@@ -135,9 +135,10 @@ class LoggingSettings(BaseModel):
 class ObservabilitySettings(BaseModel):
     tracing_enabled: bool = True
     metrics_enabled: bool = True
-
+    otlp_exporter_enabled: bool = True
     console_metric_exporter_enabled: bool = False
     console_trace_exporter_enabled: bool = False
+
 
 
 class CircuitBreakerSettings(BaseModel):

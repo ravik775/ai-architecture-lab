@@ -31,6 +31,11 @@ services:
       DATA__DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
       DATA__DATABASE_SSLMODE: "disable"
       RAG__PERSIST_DIRECTORY: "/data/chroma"
+
+      OTEL_EXPORTER_OTLP_ENDPOINT: https://api.smith.langchain.com/otel
+      OTEL_EXPORTER_OTLP_HEADERS: x-api-key=${LANGSMITH_API_KEY},Langsmith-Project=${LANGSMITH_PROJECT}
+      LANGSMITH_OTEL_ENABLED: "true"
+      LANGSMITH_ENDPOINT: https://api.smith.langchain.com
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:

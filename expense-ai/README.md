@@ -494,66 +494,6 @@ Use one web process and one managed PostgreSQL database:
 
 Docker Compose is for local multi-service development. It is not required to run multiple containers on Heroku.
 
-### Heroku example
-
-The repository includes a Python 3.12 version file and this `Procfile` command:
-
-```text
-web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-```
-
-Create the app and PostgreSQL add-on:
-
-```bash
-heroku login
-heroku create <expense-ai-app-name>
-heroku addons:create heroku-postgresql:essential-0 -a <expense-ai-app-name>
-```
-
-Heroku supplies a flat `DATABASE_URL`. Before deployment, ensure the configuration adapter maps `DATABASE_URL` to `settings.data.database_url` and `DATABASE_SSLMODE` to `settings.data.database_sslmode`. Nested `DATA__DATABASE_URL` and `DATA__DATABASE_SSLMODE` remain the preferred local and Docker variables. Do not copy a managed database URL into tracked files.
-
-Set non-secret runtime configuration:
-
-```bash
-heroku config:set \
-  AGENTIC_EXPENSE=true \
-  DATABASE_SSLMODE=require \
-  RUNTIME_TIMEOUT_SECONDS=10 \
-  RUNTIME_MAX_RETRIES=1 \
-  RAG_PERSIST_DIRECTORY=/tmp/chroma \
-  OTEL_CONSOLE_TRACE_ENABLED=true \
-  LANGSMITH_TRACING=true \
-  LANGSMITH_PROJECT=expense-ai-heroku-demo \
-  -a <expense-ai-app-name>
-```
-
-Set secrets separately:
-
-```bash
-heroku config:set OPENROUTER_API_KEY=<key> -a <expense-ai-app-name>
-heroku config:set LANGSMITH_API_KEY=<key> -a <expense-ai-app-name>
-```
-
-Deploy and verify:
-
-```bash
-git push heroku main
-heroku ps:scale web=1 -a <expense-ai-app-name>
-heroku open -a <expense-ai-app-name>
-heroku logs --tail -a <expense-ai-app-name>
-curl https://<expense-ai-app-name>.herokuapp.com/health
-```
-
-Use `RUNTIME_TIMEOUT_SECONDS=10` and `RUNTIME_MAX_RETRIES=1` for the demo so one failed provider attempt plus one retry normally remains below the platform request deadline.
-
-If deploying the Docker image instead of the Python buildpack, the image already starts with:
-
-```text
-exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
-```
-
-The shell wrapper is intentional because Docker's JSON-form command does not expand `${PORT}` by itself.
-
 ## Architecture decisions
 
 | Decision | Reason |

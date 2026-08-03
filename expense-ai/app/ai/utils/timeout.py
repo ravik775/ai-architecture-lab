@@ -1,3 +1,4 @@
+import contextvars
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Callable, TypeVar
 
@@ -18,8 +19,16 @@ def execute_with_timeout(timeout_seconds: float, func: Callable[[], T]) -> T:
     This implementation avoids the overhead of creating a new ThreadPoolExecutor
     on every call and can later be replaced with asyncio.wait_for() without
     changing the timeout policy.
+
+    The calling thread's context (including any active OpenTelemetry span) is
+    captured via contextvars.copy_context() and replayed inside the worker
+    thread via ctx.run(func). Without this, ThreadPoolExecutor.submit() starts
+    the worker with an empty context, so any span created inside `func` (e.g.
+    the LiteLLM "chat {model}" span) has no parent and shows up in LangSmith
+    as a disconnected root trace instead of nesting under the caller.
     """
-    future = _GLOBAL_EXECUTOR.submit(func)
+    ctx = contextvars.copy_context()
+    future = _GLOBAL_EXECUTOR.submit(ctx.run,func)
     try:
         return future.result(timeout=timeout_seconds)
     except TimeoutError as ex:
