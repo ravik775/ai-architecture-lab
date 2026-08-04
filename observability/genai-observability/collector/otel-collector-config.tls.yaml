@@ -1,0 +1,162 @@
+# TLS/mTLS variant of otel-collector-config.yaml - identical pipelines,
+# two differences: the OTLP/HTTP receiver requires a client certificate
+# (mTLS) from the app, and the Prometheus exporter serves its scrape
+# endpoint over TLS instead of plaintext.
+#
+# Not the default - opt-in via docker-compose.tls.yml, which mounts
+# certs/ (see certs/generate-certs.sh) and points the collector's
+# --config at this file instead. Everything else (pipelines, processors,
+# backend exporters, tail_sampling policy) is unchanged from
+# otel-collector-config.yaml - copy any edits you make there over here
+# too, or better, diff the two before a release so they don't drift.
+#
+# Verified schema (Aug 2026): receiver TLS uses cert_file/key_file
+# (server identity) + client_ca_file (require + verify client cert =
+# mTLS) under protocols.http.tls; the prometheus exporter accepts the
+# same cert_file/key_file/ca_file trio under exporters.prometheus.tls.
+
+extensions:
+  basicauth/langfuse:
+    client_auth:
+      username: ${env:LANGFUSE_PUBLIC_KEY}
+      password: ${env:LANGFUSE_SECRET_KEY}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        tls:
+          cert_file: /certs/collector.crt
+          key_file: /certs/collector.key
+          client_ca_file: /certs/ca.crt   # presence of this = require + verify client cert (mTLS)
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 200
+
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: always-keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: rate-limit-the-rest
+        type: rate_limiting
+        rate_limiting:
+          spans_per_second: 100
+
+  # Layer 2 of the PII redaction plan - identical to otel-collector-config.yaml,
+  # see that file for the full reasoning (allowlist rationale, deliberate
+  # http.target/net.peer.ip omissions, pattern set mirrored from
+  # app/observability/redaction.py). Keep the two files' `redaction`
+  # blocks in sync.
+  redaction:
+    allow_all_keys: false
+    allowed_keys:
+      - app.session_id
+      - app.endpoint
+      - app.request.message_length
+      - app.auth.key_id
+      - app.trace.forced
+      - app.response.trace_id
+      - app.duration_ms
+      - app.memory.turns_loaded
+      - app.memory.turns_after
+      - app.graph.name
+      - app.llm.cost_usd
+      - app.llm.latency_ms
+      - app.health.window_seconds
+      - app.health.checks_total
+      - app.health.checks_success
+      - app.health.checks_failure
+      - app.health.success_rate
+      - app.health.latency_avg_ms
+      - app.health.latency_min_ms
+      - app.health.latency_max_ms
+      - app.health.latency_p95_ms
+      - gen_ai.system
+      - gen_ai.request.model
+      - gen_ai.request.temperature
+      - gen_ai.request.max_tokens
+      - gen_ai.response.model
+      - gen_ai.usage.prompt_tokens
+      - gen_ai.usage.completion_tokens
+      - gen_ai.usage.total_tokens
+      - gen_ai.response.finish_reasons
+      - http.method
+      - http.status_code
+      - http.route
+      - http.scheme
+      - http.flavor
+      - http.host
+      - http.server_name
+      - asgi.event.type
+    blocked_values:
+      - '[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}'
+      - '\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
+      - '\b(?:\d[ -]?){13,19}\b'
+      - '\b\d{3}-\d{2}-\d{4}\b'
+      - '\b(?:sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})\b'
+      - '\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+    summary: info
+
+  batch:
+    timeout: 2s
+    send_batch_size: 512
+  resource:
+    attributes:
+      - key: deployment.pipeline
+        value: "otel-collector-tls"
+        action: upsert
+
+exporters:
+  debug:
+    verbosity: basic
+
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_HOST}/api/public/otel
+    auth:
+      authenticator: basicauth/langfuse
+
+  otlphttp/langsmith:
+    endpoint: ${env:LANGSMITH_OTLP_ENDPOINT}
+    headers:
+      x-api-key: ${env:LANGSMITH_API_KEY}
+      Langsmith-Project: ${env:LANGSMITH_PROJECT}
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+    tls:
+      cert_file: /certs/collector.crt
+      key_file: /certs/collector.key
+      # No client_ca_file here deliberately - Prometheus scrapes over TLS
+      # (traffic is encrypted, server identity is verified via ca_file on
+      # the Prometheus side in prometheus.tls.yml), but we don't also
+      # require a client cert from Prometheus itself in this pass, to
+      # keep the scrape side of this one hop simpler than the app<->collector
+      # hop. Add client_ca_file here too if you want full mTLS on this
+      # leg as well.
+
+service:
+  extensions: [basicauth/langfuse]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, redaction, batch, resource]
+      exporters: [debug, otlphttp/langfuse]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [debug, prometheus]
+  telemetry:
+    logs:
+      level: info

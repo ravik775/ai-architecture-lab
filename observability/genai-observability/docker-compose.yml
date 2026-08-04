@@ -1,0 +1,58 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.110.0
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    environment:
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGSMITH_OTLP_ENDPOINT: ${LANGSMITH_OTLP_ENDPOINT:-https://api.smith.langchain.com/otel}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-genai-observability-service}
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus scrape endpoint (metrics pipeline)
+    restart: unless-stopped
+    networks:
+      - obs-net
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    volumes:
+      - ./collector/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+    networks:
+      - obs-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genai-observability-app
+    env_file:
+      - .env
+    environment:
+      # Default wiring: app -> collector -> Langfuse/LangSmith.
+      OBSERVABILITY_PROVIDER: ${OBSERVABILITY_PROVIDER:-collector}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "8000:8000"
+    depends_on:
+      - otel-collector
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - obs-net
+
+networks:
+  obs-net:
+    driver: bridge

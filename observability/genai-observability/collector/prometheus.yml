@@ -1,0 +1,12 @@
+# Scrapes the OpenTelemetry Collector's `prometheus` exporter (port 8889),
+# which receives OTLP metrics from the app - request rate, token cost per
+# minute, health check success rate. See app/observability/metrics.py for
+# the instrument definitions and otel-collector-config.yaml for the
+# metrics pipeline that lands them here.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]

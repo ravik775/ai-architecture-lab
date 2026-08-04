@@ -1,0 +1,41 @@
+# TLS/mTLS overlay - opt-in, not the default path.
+#
+# Usage:
+#   ./certs/generate-certs.sh
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up --build
+#
+# What this changes vs. the base docker-compose.yml, and nothing else:
+#   - otel-collector: loads otel-collector-config.tls.yaml instead of the
+#     plaintext config, and gets certs/ mounted read-only at /certs.
+#   - prometheus: scrapes the collector over HTTPS (prometheus.tls.yml)
+#     instead of plaintext HTTP, with certs/ mounted for its CA trust.
+#   - app: exports OTLP to the collector over https:// with a client
+#     certificate (mTLS), via OTEL_TLS_ENABLED=true + certs/ mounted.
+#
+# Compose merges `volumes`/`environment` by target key/name across -f
+# files, so redeclaring the same target here intentionally replaces the
+# plaintext-mode value from docker-compose.yml - that's not accidental
+# duplication, it's how this overlay swaps config without a second copy
+# of every unrelated setting.
+
+services:
+  otel-collector:
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./collector/otel-collector-config.tls.yaml:/etc/otel-collector-config.yaml:ro
+      - ./certs:/certs:ro
+
+  prometheus:
+    volumes:
+      - ./collector/prometheus.tls.yml:/etc/prometheus/prometheus.yml:ro
+      - ./certs:/certs:ro
+
+  app:
+    environment:
+      OTEL_TLS_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: https://otel-collector:4318
+      OTEL_TLS_CA_FILE: /certs/ca.crt
+      OTEL_TLS_CLIENT_CERT_FILE: /certs/app.crt
+      OTEL_TLS_CLIENT_KEY_FILE: /certs/app.key
+    volumes:
+      - ./certs:/certs:ro

@@ -1,0 +1,23 @@
+[tool.ruff]
+# 110, not ruff's default 88: this codebase deliberately favors long,
+# explanatory inline comments (the "why", not just the "what") over
+# terse code + separate docs, verified against the actual distribution
+# before picking this number - 88 would have flagged 78 lines, 110
+# leaves only the handful that are genuinely too long. Reformatting
+# every comment to fit 88 columns would have shredded a lot of the
+# reasoning those comments carry for little real readability gain.
+line-length = 110
+target-version = "py311"  # matches Dockerfile's python:3.11-slim
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    # FastAPI's dependency-injection pattern is `param: T = Depends(...)`
+    # by design (see FastAPI's own docs) - Depends() in a default IS the
+    # API, not a bug. Ruff's bugbear check doesn't know about FastAPI and
+    # would otherwise flag every route in app/api/routes.py.
+    "B008",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
