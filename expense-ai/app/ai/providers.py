@@ -20,6 +20,13 @@ class ProviderRegistry:
             for provider in settings.providers:
                 if not provider.enabled:
                     continue
+
+                if not provider.api_key and provider.name != "ollama":
+                    raise ValueError(f"Missing API key for provider: {provider.name}")
+
+                if not provider.model:
+                    raise ValueError(f"Missing model for provider: {provider.name}")
+
                 cls._providers.append(
                     Provider(
                         name=provider.name,
@@ -27,7 +34,7 @@ class ProviderRegistry:
                         api_key=provider.api_key,
                         priority=provider.priority,
                         base_url=provider.base_url,
-                        enabled=provider.enabled,
+                        enabled=provider.enabled
                     )
                 )
 

@@ -3,11 +3,12 @@ __pycache__/
 *.py[codz]
 *$py.class
 
-**/repomix*.xml
+**/.chroma/*
+
 .mvn/**
 **/mvnw
 **/mvnw.cmd
-
+**/repomix*.xml
 # C extensions
 *.so
 
@@ -74,9 +75,6 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
-**/.env
-**/.venv
-**/.env.*
 # Flask stuff:
 instance/
 .webassets-cache

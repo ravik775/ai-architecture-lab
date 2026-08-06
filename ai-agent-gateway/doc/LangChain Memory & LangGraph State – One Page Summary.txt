@@ -1,0 +1,344 @@
+	# LangChain Memory & LangGraph State – One Page Summary
+
+## Core Concept
+
+Large Language Models (LLMs) are **stateless**—they do not remember previous interactions. Every request must include all the context needed to answer the user's question.
+
+**Memory** in LangChain is the mechanism for **managing, storing, retrieving, and injecting context** into the prompt.
+
+Think of memory as the **Context Management Layer** of an AI application.
+
+```
+User Request
+      │
+      ▼
++----------------------+
+| Context Builder      |
+| - Conversation       |
+| - User Preferences   |
+| - Retrieved Docs     |
+| - Current Workflow   |
+| - Tool Results       |
++----------------------+
+      │
+      ▼
+     LLM
+```
+
+---
+
+# Memory Types
+
+## 1. Working Memory
+
+* Holds information required for the **current task**
+* Temporary
+* Similar to CPU RAM
+
+**Example**
+
+* Flight booking
+* Current order processing
+* Form filling
+
+---
+
+## 2. Conversation Memory
+
+* Stores chat history
+* Enables follow-up questions
+
+Example:
+
+```
+User: My name is Ravi.
+User: Explain RAG.
+```
+
+The model remembers the previous conversation.
+
+---
+
+## 3. Summary Memory
+
+Instead of storing every message,
+
+Store:
+
+```
+User is a Solution Architect.
+Learning LangGraph.
+Prefers Java examples.
+```
+
+Reduces token usage while preserving important context.
+
+---
+
+## 4. Buffer / Window Memory
+
+Stores only:
+
+* Last N messages
+* Last K interactions
+* Last X tokens
+
+Useful for chatbots where only recent context matters.
+
+---
+
+## 5. Entity Memory
+
+Stores important entities instead of full conversations.
+
+Example
+
+```
+Name = Ravi
+
+Role = Architect
+
+Company = Oracle
+
+Interest = LangGraph
+```
+
+Useful for CRM and customer support systems.
+
+---
+
+## 6. Semantic Memory
+
+Stores long-term knowledge.
+
+Examples
+
+* User preferences
+* Company standards
+* Coding style
+* Frequently used technologies
+
+Typically stored in
+
+* Vector Database
+* PostgreSQL
+* Redis
+
+---
+
+## 7. Episodic Memory
+
+Stores previous experiences.
+
+Example
+
+```
+Last deployment failed
+
+Reason:
+Database migration
+```
+
+Useful for AI agents that learn from previous executions.
+
+---
+
+## 8. Procedural Memory
+
+Stores workflows and procedures.
+
+Example
+
+```
+Deploy Service
+
+↓
+
+Build
+
+↓
+
+Run Tests
+
+↓
+
+Docker
+
+↓
+
+Deploy
+```
+
+Useful for automation agents.
+
+---
+
+## 9. Retrieval Memory (RAG)
+
+Instead of remembering everything,
+
+Search knowledge sources.
+
+```
+Question
+
+↓
+
+Vector Search
+
+↓
+
+Relevant Documents
+
+↓
+
+LLM
+```
+
+Ideal for enterprise knowledge bases.
+
+---
+
+## 10. Tool Memory
+
+Stores outputs from external tools.
+
+Example
+
+```
+Weather API
+
+↓
+
+26°C
+```
+
+Reuse instead of calling the API repeatedly.
+
+---
+
+# Evolution of LangChain
+
+Earlier versions of LangChain introduced many specialized memory classes:
+
+* ConversationBufferMemory
+* ConversationSummaryMemory
+* ConversationTokenBufferMemory
+* ConversationEntityMemory
+* ConversationSummaryBufferMemory
+
+These work well for chatbots.
+
+However, modern AI systems require **workflow-aware memory**, leading to **LangGraph**.
+
+---
+
+# LangGraph Perspective
+
+LangGraph moves beyond "memory classes."
+
+Instead of asking:
+
+> Which memory object should I use?
+
+You ask:
+
+> What application state should each node read and update?
+
+Memory becomes **graph state**.
+
+```
+              LangGraph
+
+                   │
+
+         Shared Application State
+
+                   │
+
+     Node A ←→ Node B ←→ Node C
+
+                   │
+
+              Persist State
+```
+
+State includes:
+
+* Messages
+* User Profile
+* Tool Outputs
+* Workflow Status
+* Retrieved Documents
+* Execution Results
+
+---
+
+# Production Architecture
+
+```
+                User
+
+                  │
+
+                  ▼
+
+            LangGraph Agent
+
+                  │
+
+      +-------------------------+
+
+      │     State Manager       │
+
+      +-------------------------+
+
+      │ Working Memory          │
+
+      │ Conversation History    │
+
+      │ Semantic Memory         │
+
+      │ Retrieved Documents     │
+
+      │ Tool Results            │
+
+      │ Workflow State          │
+
+      +-------------------------+
+
+                  │
+
+                  ▼
+
+                 LLM
+```
+
+---
+
+# Key Takeaways
+
+* **LLMs are stateless**; memory supplies the required context.
+* **Memory is more than chat history**—it includes workflow state, user knowledge, retrieved documents, and tool outputs.
+* **Working memory** handles the current task.
+* **Conversation memory** maintains dialogue continuity.
+* **Semantic memory** stores long-term knowledge.
+* **Episodic memory** captures past experiences.
+* **Retrieval memory** powers RAG applications.
+* **LangGraph** treats memory as **application state**, enabling scalable, production-grade AI workflows.
+
+---
+
+# Next Topics (LangGraph)
+
+The next concepts build directly on this foundation:
+
+1. **State Management** – The core of LangGraph; defines what data flows between nodes.
+2. **Checkpointers** – Persist and restore graph state, enabling resumable workflows.
+3. **Stores** – Long-term storage for memory shared across conversations and sessions.
+4. **Reducers** – Merge state updates from parallel branches safely and deterministically.
+5. **Human-in-the-Loop** – Pause execution for approvals or user input, then resume.
+6. **Multi-Agent Memory Sharing** – Enable multiple agents to collaborate using shared or scoped state.
+7. **Memory Architecture Patterns** – Design production-ready AI systems with layered memory, persistence, caching, and retrieval strategies.
+
+> **Learning Path:** **Memory → State → Checkpointing → Persistence → Parallel State Management → Human Collaboration → Multi-Agent Systems → Production Architecture.**

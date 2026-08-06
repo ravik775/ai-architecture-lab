@@ -1,14 +1,6 @@
 # app/prompts/registry.py
-
-from enum import Enum
-
+from app.ai.models import PromptType
 from app.prompts.expense_summary import ExpenseSummaryPrompt
-
-
-class PromptType(str, Enum):
-    SUMMARY = "summary"
-
-
 class PromptRegistry:
     _registry = {
         PromptType.SUMMARY: ExpenseSummaryPrompt(version="v1"),

@@ -11,5 +11,7 @@ class TimeoutPolicy(Policy):
     provider call.
     """
     priority: int = 50
+    name = 'timeout'
+
     def execute(self, context: ExecutionContext, next_handler: ExecutionHandler,) -> ProviderResponse:
         return execute_with_timeout(timeout_seconds=settings.runtime.timeout_seconds, func=next_handler,)

@@ -1,0 +1,102 @@
+# Provider/model catalog for the sidebar's Provider -> Model pickers.
+# Add a provider or model here and it shows up in the app - no code changes.
+#
+# api_key_env_vars: checked in order; the first one set in the environment
+# (or .env) is used to auto-fill the sidebar's API key field.
+
+# OpenRouter, not Gemini, on purpose: this account's Gemini key has zero
+# free-tier quota (confirmed via a live 429 on every model, not just a
+# deprecated-model issue), so defaulting to it means every fresh session
+# starts with a dead-on-arrival provider. Gemini stays fully available in
+# the picker in case that changes.
+default_provider: "OpenRouter"
+
+# Used by the chat panel's "Enhance prompt" checkbox: a small model that
+# rewrites the user's raw prompt into something clearer before it goes to
+# the main agent. Fixed/pinned deliberately - it does not follow whatever
+# provider/model is selected for chat. A local Ollama model is used because
+# this role needs no tool-calling (plain text rewrite), so a small local
+# model is reliable here, and it means the checkbox works with zero API
+# key required, regardless of which provider chat is using.
+#
+# Tried deepseek-r1:1.5b here first (smaller, reasoning-distilled) - it
+# failed in direct testing: instead of rewriting the prompt as instructed,
+# it tried to directly solve the underlying task (wrote broken JS code for
+# "make a calculator" instead of a clearer prompt describing one). R1-distill
+# models are tuned to aggressively solve tasks, which fights a
+# rewrite-only system prompt. llama3.2:1b follows the instruction correctly.
+prompt_enhancer:
+  model: "ollama_chat/llama3.2:1b"
+  api_key_env_vars: []
+
+providers:
+  "Gemini (Google AI Studio)":
+    api_key_env_vars: ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+    key_url: "https://aistudio.google.com/apikey"
+    models:
+      - "gemini/gemini-2.5-flash"
+      - "gemini/gemini-2.5-pro"
+      - "gemini/gemini-2.0-flash"
+      - "gemini/gemini-2.0-flash-lite"
+
+  "OpenRouter":
+    api_key_env_vars: ["OPENROUTER_API_KEY"]
+    key_url: "https://openrouter.ai/keys"
+    models:
+      - "openrouter/anthropic/claude-sonnet-5"
+      - "openrouter/anthropic/claude-opus-5"
+      - "openrouter/openai/gpt-4o"
+      - "openrouter/openai/gpt-4o-mini"
+      - "openrouter/google/gemini-2.5-flash"
+      - "openrouter/google/gemini-2.5-pro"
+      - "openrouter/deepseek/deepseek-chat"
+      - "openrouter/qwen/qwen-2.5-72b-instruct"
+      - "openrouter/meta-llama/llama-3.1-8b-instruct"
+      - "openrouter/mistralai/mistral-large"
+      # --- Free tier (validated against OpenRouter's live model catalog:
+      # zero pricing + "tools" in supported_parameters, i.e. confirmed to
+      # support function calling, which this agent relies on every turn) ---
+      - "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+      - "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+      - "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
+      - "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+      - "openrouter/nvidia/nemotron-nano-12b-v2-vl:free"
+      - "openrouter/nvidia/nemotron-nano-9b-v2:free"
+      - "openrouter/cohere/north-mini-code:free"
+      - "openrouter/openai/gpt-oss-20b:free"
+      - "openrouter/google/gemma-4-31b-it:free"
+      - "openrouter/google/gemma-4-26b-a4b-it:free"
+
+  "Hugging Face":
+    # HF's Serverless Inference API auto-routes each request to whichever
+    # backend provider (novita/together/fireworks/deepinfra/etc.) currently
+    # serves the model live - confirmed "warm" for all of these via
+    # https://huggingface.co/api/models/<id>. Tool-calling support can vary
+    # by whichever backend a given request lands on; the app's existing
+    # model-chain fallback + retry logic absorbs that automatically.
+    api_key_env_vars: ["HF_TOKEN", "HUGGINGFACE_API_KEY"]
+    key_url: "https://huggingface.co/settings/tokens"
+    models:
+      - "huggingface/deepseek-ai/DeepSeek-V4-Flash-0731"
+      - "huggingface/deepseek-ai/DeepSeek-V4-Flash"
+      - "huggingface/Qwen/Qwen2.5-7B-Instruct"
+      - "huggingface/Qwen/Qwen3-8B"
+      - "huggingface/openai/gpt-oss-20b"
+
+  "Ollama (Local)":
+    # Runs entirely on this machine via a local Ollama server - no API key,
+    # no per-request network call, no rate limits. Requires the Ollama app
+    # (https://ollama.com) running and the model already pulled
+    # (`ollama pull <model>`); litellm's `ollama_chat/` prefix talks to it
+    # over its OpenAI-compatible chat API at localhost:11434, including
+    # tool-calling for tool-capable models (Llama 3.1+, Qwen2.5+, etc.).
+    # Kept to <7B: this laptop has no dedicated GPU (Intel Iris Xe iGPU
+    # only) and 15.7GB total RAM - a 7B Q4 model (~4.7GB) is CPU-only and
+    # noticeably slow (est. 3-8 tok/s), competing with everything else
+    # running. Sub-3B models stay fast and leave headroom.
+    api_key_env_vars: []
+    key_url: "https://ollama.com/download"
+    models:
+      - "ollama_chat/qwen2.5-coder:1.5b"
+      - "ollama_chat/llama3.2:1b"
+      - "ollama_chat/llama3.2:3b"

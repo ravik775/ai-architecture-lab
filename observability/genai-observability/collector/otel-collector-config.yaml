@@ -1,0 +1,258 @@
+# OpenTelemetry Collector configuration.
+#
+# This is where "switch observability provider" actually happens for the
+# default (recommended) OBSERVABILITY_PROVIDER=collector mode: the app only
+# ever speaks OTLP to this collector. To move from Langfuse to LangSmith (or
+# add a second destination, e.g. Jaeger for local debugging + Langfuse for
+# the team), edit `service.pipelines.traces.exporters` below and restart the
+# collector container - the Python app does not change or restart.
+#
+# Verified against provider docs (Aug 2026):
+#   Langfuse OTLP/HTTP:  POST {LANGFUSE_HOST}/api/public/otel/v1/traces
+#                         Basic Auth: base64(public_key:secret_key)
+#   LangSmith OTLP/HTTP: POST https://api.smith.langchain.com/otel/v1/traces
+#                         Header: x-api-key: <LANGSMITH_API_KEY>
+#                         Header: Langsmith-Project: <project name>
+#                         Note: LangSmith's OTel ingestion primarily targets the
+#                         OpenLLMetry semantic convention today; gen_ai.* support
+#                         is still rolling out, so LangSmith traces may render
+#                         with fewer inferred fields than Langfuse until that lands.
+#
+# Metrics pipeline: neither Langfuse nor LangSmith ingest OTLP *metrics*
+# today (both are trace/observation stores, not timeseries backends), so
+# the metrics pipeline below routes to a bundled Prometheus instead
+# (see docker-compose.yml's `prometheus` service, scraping this
+# collector's :8889 endpoint). This is the standard real-world split:
+# traces -> an LLM-trace platform, metrics -> Prometheus/Grafana.
+#
+# Load-based sampling: rate limiting happens HERE (tail_sampling processor
+# below), not in the app's SDK. Why collector-side, not SDK-side:
+#   - Centralized: one rate limit across every app replica, not one bucket
+#     per pod.
+#   - Content-aware: the SDK decides before it knows a request will error;
+#     the collector sees the whole trace first, so "always keep errors,
+#     rate-limit the rest" is a single policy chain here (see below), not
+#     two disconnected mechanisms.
+#   - Off the request path: the app's BatchSpanProcessor already exports
+#     spans on a background thread (see app/observability/setup.py) - the
+#     app returns its HTTP response to the caller long before this
+#     collector ever makes a keep/drop decision. Tail sampling adds
+#     collector-side memory/CPU (it holds each trace for `decision_wait`
+#     before deciding), never /chat latency.
+# This requires the SDK to export 100% of spans to the collector (see
+# TRACE_SAMPLING_RATIO=1.0 default) - if the SDK head-samples traces away
+# before they arrive here, the collector never gets a chance to evaluate
+# them, and "always keep errors" silently stops being true.
+
+extensions:
+  basicauth/langfuse:
+    client_auth:
+      username: ${env:LANGFUSE_PUBLIC_KEY}
+      password: ${env:LANGFUSE_SECRET_KEY}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 200
+
+  # Load-based sampling policy chain. Evaluated per trace, OR'd together
+  # (a trace is kept if ANY policy below says "sample"):
+  #   1. always-keep-errors - never rate-limit away a failing request;
+  #      this is what X-Force-Trace (app-side) complements, not replaces -
+  #      that header forces one specific request in regardless of both
+  #      of these policies.
+  #   2. rate-limit-the-rest - token-bucket cap on everything else, so a
+  #      traffic spike degrades gracefully (fixed spans/sec out) instead
+  #      of spiking your Langfuse ingestion bill 1:1 with load.
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: always-keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: rate-limit-the-rest
+        type: rate_limiting
+        rate_limiting:
+          spans_per_second: 100
+
+  # Layer 2 of the PII redaction plan (docs/SECURITY-PLAN.md Section 2.1) -
+  # defense in depth alongside the app's own RedactingSpanExporter (Layer
+  # 1, app/observability/redaction.py). This is the backstop for content
+  # that reaches a span through a path Layer 1 never sees: a future
+  # third-party auto-instrumentation library attaching content directly,
+  # or a processor/exporter swap that bypasses our own wrapper. Verified
+  # against the pinned collector image (otel/opentelemetry-collector-contrib
+  # v0.110.0's actual processor README, not the current-main docs, which
+  # already describe newer fields this version doesn't have):
+  #   - allow_all_keys / allowed_keys / ignored_keys / blocked_values /
+  #     summary all exist in v0.110.0.
+  #   - allowed_values, ignored_key_patterns, blocked_key_patterns,
+  #     hash_function, url_sanitizer, db_sanitizer do NOT exist yet in
+  #     this version - do not add them without bumping the pinned image
+  #     first, they will be silently ignored or rejected.
+  #
+  # allow_all_keys: false + an explicit allowlist means anything NOT
+  # listed below is deleted outright, not just masked - fail closed. Two
+  # deliberate omissions worth calling out (not oversights):
+  #   - http.target / http.url (from FastAPIInstrumentor): these contain
+  #     the *resolved* request path, e.g. /chat/<real-session-id>/history.
+  #     app/api/routes.py's session_id path param has no format
+  #     constraint, so a user could put anything - including PII - in
+  #     their own session_id. http.route (the *template*,
+  #     /chat/{session_id}/history) is allowlisted instead: same
+  #     debugging value, none of the risk.
+  #   - net.peer.ip / client.address (the caller's IP): an IP address is
+  #     personal data under GDPR, and this service has no operational
+  #     need for it in telemetry (no abuse/geo features today). Left off
+  #     the allowlist entirely rather than allowed-and-masked.
+  redaction:
+    allow_all_keys: false
+    allowed_keys:
+      # This app's own span attributes (app/api/routes.py, app/llm/chain.py,
+      # app/health/monitor.py, app/observability/tracing.py) - audited,
+      # none carry free-text user content by default (see SECURITY-PLAN.md
+      # Section 1). app.session_id is the one exception worth flagging:
+      # it's user-suppliable with no format constraint, so it's allowed
+      # through here (debugging value) but still covered by
+      # `blocked_values` below AND already regex-redacted by Layer 1
+      # before it ever reaches this collector - two independent controls
+      # on the same field, which is the point.
+      - app.session_id
+      - app.endpoint
+      - app.request.message_length
+      - app.auth.key_id
+      - app.trace.forced
+      - app.response.trace_id
+      - app.duration_ms
+      - app.memory.turns_loaded
+      - app.memory.turns_after
+      - app.graph.name
+      - app.llm.cost_usd
+      - app.llm.latency_ms
+      - app.health.window_seconds
+      - app.health.checks_total
+      - app.health.checks_success
+      - app.health.checks_failure
+      - app.health.success_rate
+      - app.health.latency_avg_ms
+      - app.health.latency_min_ms
+      - app.health.latency_max_ms
+      - app.health.latency_p95_ms
+      # gen_ai.* semantic-convention attributes (app/observability/tracing.py).
+      # Structural/numeric today (model name, token counts, temperature) -
+      # NOT gen_ai.prompt/gen_ai.completion, which set_llm_content_attributes()
+      # can attach but which nothing calls yet (see that function's
+      # docstring: turning it on means adding those two keys here too,
+      # deliberately, not silently).
+      - gen_ai.system
+      - gen_ai.request.model
+      - gen_ai.request.temperature
+      - gen_ai.request.max_tokens
+      - gen_ai.response.model
+      - gen_ai.usage.prompt_tokens
+      - gen_ai.usage.completion_tokens
+      - gen_ai.usage.total_tokens
+      - gen_ai.response.finish_reasons
+      # FastAPIInstrumentor auto-instrumentation (app/main.py) - safe
+      # structural subset only, verified against the actual attributes it
+      # emits in this session (opentelemetry-instrumentation-fastapi).
+      # http.target/http.url/net.peer.ip deliberately excluded - see the
+      # comment above this block.
+      - http.method
+      - http.status_code
+      - http.route
+      - http.scheme
+      - http.flavor
+      - http.host
+      - http.server_name
+      - asgi.event.type
+    # Same 6 pattern classes as app/observability/redaction.py's
+    # RegexPIIDetector (Layer 1) - keep the two in sync if either changes.
+    # Applied to the values of allowed keys above; a match is masked with
+    # a fixed-length string, not removed like a disallowed key.
+    blocked_values:
+      - '[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}'                                     # email
+      - '\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'           # phone
+      - '\b(?:\d[ -]?){13,19}\b'                                            # credit-card-shaped
+      - '\b\d{3}-\d{2}-\d{4}\b'                                             # SSN-shaped
+      - '\b(?:sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})\b'  # API-key-shaped
+      - '\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b' # IPv4
+    # info: redacted/masked *counts* get added as diagnostic attributes;
+    # debug would also list which key *names* were touched, which is
+    # useful while tuning this config locally but unnecessary (and a
+    # small info leak of its own) once it's settled.
+    summary: info
+
+  batch:
+    timeout: 2s
+    send_batch_size: 512
+  resource:
+    attributes:
+      - key: deployment.pipeline
+        value: "otel-collector"
+        action: upsert
+
+exporters:
+  debug:
+    verbosity: basic
+
+  # --- Backend 1: Langfuse (enabled by default) ---
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_HOST}/api/public/otel
+    auth:
+      authenticator: basicauth/langfuse
+
+  # --- Backend 2: LangSmith (disabled by default - add to the pipeline
+  #     below and set LANGSMITH_API_KEY to enable, alongside or instead of
+  #     Langfuse) ---
+  otlphttp/langsmith:
+    endpoint: ${env:LANGSMITH_OTLP_ENDPOINT}
+    headers:
+      x-api-key: ${env:LANGSMITH_API_KEY}
+      Langsmith-Project: ${env:LANGSMITH_PROJECT}
+
+  # --- Metrics destination: Prometheus scrapes this endpoint (see the
+  #     `prometheus` service + collector/prometheus.yml) ---
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  extensions: [basicauth/langfuse]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      # Order matters: tail_sampling MUST run before batch (it needs
+      # individual spans to group into traces and hold for decision_wait;
+      # batch would coalesce them into arbitrary network-sized chunks
+      # first and break that). redaction runs right after tail_sampling,
+      # still before batch, for the same reason - and so it only has to
+      # process spans that survived sampling, not every span ever
+      # received (cheaper, and the two concerns - "should we keep this
+      # trace" vs "is this attribute safe to export" - are independent).
+      processors: [memory_limiter, tail_sampling, redaction, batch, resource]
+      # Default: Langfuse + local debug console output.
+      # To add LangSmith too: exporters: [debug, otlphttp/langfuse, otlphttp/langsmith]
+      # To use LangSmith only: exporters: [debug, otlphttp/langsmith]
+      exporters: [debug, otlphttp/langfuse]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      # request rate, token cost/min, health success rate, etc. - see
+      # app/observability/metrics.py for what's emitted.
+      exporters: [debug, prometheus]
+  telemetry:
+    logs:
+      level: info

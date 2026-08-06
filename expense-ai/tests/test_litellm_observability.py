@@ -1,58 +1,113 @@
-from unittest.mock import MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import patch
 
+import pytest
+
+from app.ai.models import AIExpenseAnalysis, AIRequest, ExecutionContext, Provider
+from app.exceptions import LLMProviderError
 from app.llm.litellm_service import LiteLLMService
-from app.schemas import AIExpenseAnalysis
+from app.schemas import Expense, ExpenseRequest
 
 
-def test_structured_chat_logs_retry_and_success(caplog):
-    invalid_response = _completion_response('{"summary": ""}')
-    valid_response = _completion_response(
-        """
-{
-  "summary": "Valid summary",
-  "largest_category": "Travel",
-  "high_value_expenses": [],
-  "recommendations": [],
-  "suspicious": []
-}
-""",
-        usage={"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30},
+def test_litellm_invoke_records_failure_for_empty_response():
+    empty_response = _completion_response(parsed=None, content=None)
+
+    request = _ai_request()
+    context = _execution_context(request)
+
+    with patch(
+        "app.llm.litellm_service.completion",
+        return_value=empty_response,
+    ), patch(
+        "app.llm.litellm_service.record_llm_failure"
+    ) as record_failure:
+        with pytest.raises(LLMProviderError):
+            LiteLLMService().invoke(context, request)
+
+    record_failure.assert_called_once_with(
+        "test-provider",
+        "test-model",
+        "EmptyResponse",
     )
 
-    with patch("app.llm.litellm_service.settings") as mock_settings, patch(
+
+def test_litellm_invoke_returns_usage_for_valid_response():
+    parsed = AIExpenseAnalysis(
+        summary="Valid summary",
+        largest_category="Travel",
+        policy_flags=[],
+        requires_approval=False,
+        suspicious=[],
+    )
+
+    valid_response = _completion_response(
+        parsed=parsed,
+        content=None,
+        usage={
+            "prompt_tokens": 20,
+            "completion_tokens": 10,
+            "total_tokens": 30,
+        },
+    )
+
+    request = _ai_request()
+    context = _execution_context(request)
+
+    with patch(
         "app.llm.litellm_service.completion",
-        side_effect=[invalid_response, valid_response],
+        return_value=valid_response,
     ):
-        mock_settings.ai.llm_provider = "litellm"
-        mock_settings.ai.llm_model = "test-model"
-        mock_settings.ai.model_api_key = "test-key"
-        mock_settings.ai.timeout = 30
-        mock_settings.ai.max_tokens = 200
-        mock_settings.ai.max_retries = 1
-        mock_settings.logging.log_prompts = False
-        mock_settings.logging.log_responses = False
-        mock_settings.logging.log_token_usage = True
-        mock_settings.logging.prompt_preview_chars = 300
+        result = LiteLLMService().invoke(context, request)
 
-        with caplog.at_level("INFO", logger="expense_ai"):
-            result = LiteLLMService().structured_chat(
-                prompt="Analyze expenses",
-                response_model=AIExpenseAnalysis,
-            )
-
-    assert result.summary == "Valid summary"
-    messages = [record.message for record in caplog.records]
-    assert any("llm.structured.request.started" in message for message in messages)
-    assert any("llm.structured.validation.failed" in message for message in messages)
-    assert any("llm.structured.request.completed" in message for message in messages)
+    assert result.parsed == parsed
+    assert result.usage.prompt_tokens == 20
+    assert result.usage.completion_tokens == 10
+    assert result.usage.total_tokens == 30
 
 
-def _completion_response(content: str, usage: dict | None = None):
-    message = MagicMock()
+def _ai_request() -> AIRequest[ExpenseRequest]:
+    return AIRequest[ExpenseRequest](
+        request=ExpenseRequest(
+            submitted_by="Ravi",
+            currency="INR",
+            submitted_date=datetime.now(timezone.utc),
+            expenses=[
+                Expense(
+                    description="Hotel stay",
+                    amount=12000,
+                    quantity=1,
+                    merchant="Hotel ABC",
+                    category="Travel",
+                )
+            ],
+        ),
+        prompt="Analyze expenses",
+        prompt_type="summary",
+    )
+
+
+def _execution_context(request: AIRequest[ExpenseRequest]) -> ExecutionContext:
+    return ExecutionContext(
+        request=request,
+        response_model=AIExpenseAnalysis,
+        provider=Provider(
+            name="test-provider",
+            model="test-model",
+            api_key="test-key",
+        ),
+    )
+
+
+def _completion_response(parsed=None, content: str | None = None, usage: dict | None = None):
+    message = type("Message", (), {})()
+    message.parsed = parsed
     message.content = content
-    choice = MagicMock()
+
+    choice = type("Choice", (), {})()
     choice.message = message
-    response = MagicMock()
+
+    response = type("Response", (), {})()
     response.choices = [choice]
     response.usage = usage
+
     return response

@@ -1,0 +1,17 @@
+[project]
+name = "gemini-agent"
+version = "0.1.0"
+description = "Lightweight, laptop-local Cowork-style coding assistant for Gemini, built on LiteLLM, LangChain, and LangGraph."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.38",
+    "langchain-core>=0.3",
+    "langgraph>=0.2",
+    "litellm>=1.50",
+    "python-dotenv>=1.0",
+    "pathspec>=0.12",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "pytest>=8.0",
+]

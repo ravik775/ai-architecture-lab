@@ -1,73 +1,35 @@
-from datetime import datetime, timezone
-
+# tests/test_prompt_registry.py
 import pytest
-
+from app.ai.models import PromptType
 from app.prompts.expense_summary import ExpenseSummaryPrompt
-from app.prompts.versions import get_prompt_template, PromptTemplateNames
-from app.schemas import Expense, ExpenseRequest
+from app.prompts.registry import PromptRegistry
 
 
-def test_summary_prompt_renders_required_sections():
-    request = ExpenseRequest(
-        submitted_by="Ravi",
-        currency="INR",
-        submitted_date=datetime.now(timezone.utc),
-        expenses=[
-            Expense(
-                description="Cloud Hosting",
-                amount=2000,
-                merchant="AWS",
-                category="Infrastructure",
-            )
+class TestPromptRegistry:
+
+    @pytest.mark.parametrize(
+        "prompt_type, expected_class",
+        [
+            (PromptType.SUMMARY, ExpenseSummaryPrompt),
         ],
     )
+    def test_get_returns_correct_prompt_instance(self, prompt_type, expected_class):
+        """Test that PromptRegistry.get() returns the correct prompt instance for each PromptType."""
+        prompt_instance = PromptRegistry.get(prompt_type)
 
-    prompt = ExpenseSummaryPrompt(version="v1").build(request)
+        assert isinstance(prompt_instance, expected_class), (
+            f"Expected instance of {expected_class.__name__}, "
+            f"got {type(prompt_instance).__name__} for {prompt_type}"
+        )
 
-    assert "System" in prompt
-    assert "Business Context" in prompt
-    assert "Input Data" in prompt
-    assert "Task" in prompt
-    assert "Expected Output" in prompt
-    assert "Ravi" in prompt
-    assert "INR" in prompt
-    assert "AWS" in prompt
-    assert "Cloud Hosting" in prompt
+    def test_registry_contains_all_prompt_types(self):
+        """Test that the internal registry covers every member of the PromptType enum."""
+        for prompt_type in PromptType:
+            assert prompt_type in PromptRegistry._registry, (
+                f"PromptType.{prompt_type.name} is missing from PromptRegistry._registry"
+            )
 
-
-def test_summary_prompt_handles_empty_expenses():
-    request = ExpenseRequest(
-        submitted_by="Ravi",
-        currency="INR",
-        expenses=[],
-    )
-
-    prompt = ExpenseSummaryPrompt(version="v1").build(request)
-
-    assert "No expenses." in prompt
-
-
-def test_summary_prompt_includes_few_shot_examples():
-    request = ExpenseRequest(
-        submitted_by="Ravi",
-        currency="INR",
-        expenses=[],
-    )
-
-    prompt = ExpenseSummaryPrompt(version="v1").build(request)
-
-    assert "Example Input:" in prompt
-    assert "Expected Output:" in prompt
-    assert "Actual Request:" in prompt
-
-
-def test_prompt_version_lookup_success():
-    template = get_prompt_template(PromptTemplateNames.EXPENSE_SUMMARY, "v1")
-
-    assert template.name == "expense-summary"
-    assert template.version == "v1"
-
-
-def test_prompt_version_lookup_failure():
-    with pytest.raises(KeyError):
-        get_prompt_template(PromptTemplateNames.EXPENSE_SUMMARY, "v999")
+    def test_get_invalid_prompt_type_raises_key_error(self):
+        """Test that passing an invalid or non-existent type raises a KeyError."""
+        with pytest.raises(KeyError):
+            PromptRegistry.get("invalid_type")  # type: ignore

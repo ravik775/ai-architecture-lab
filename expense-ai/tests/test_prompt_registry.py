@@ -1,13 +1,8 @@
+# tests/test_prompt_registry.py
 import pytest
+from app.ai.models import PromptType
 from app.prompts.expense_summary import ExpenseSummaryPrompt
-from app.prompts.expense_fraud import ExpenseFraudPrompt
-from app.prompts.expense_policy import ExpensePolicyPrompt
-from app.prompts.expense_categorization import ExpenseCategorizationPrompt
-from app.prompts.registry import PromptType, PromptRegistry
-
-
-# Assuming PromptType and PromptRegistry are imported from your module, e.g.:
-# from app.prompt_registry import PromptType, PromptRegistry
+from app.prompts.registry import PromptRegistry
 
 
 class TestPromptRegistry:

@@ -1,0 +1,35 @@
+docker compose exec app python -c "import os; from urllib.parse import urlparse; from app.config import settings; print('DATA__DATABASE_URL host:', urlparse(os.getenv('DATA__DATABASE_URL', '')).hostname); print('settings.data.database_url host:', urlparse(settings.data.database_url or '').hostname)"
+docker compose exec app python -c "import os; from urllib.parse import urlparse; from app.config import settings; print('Environment:', urlparse(os.getenv('DATA__DATABASE_URL', '')).hostname); print('Settings:', urlparse(settings.data.database_url or '').hostname)"
+
+
+docker compose -f .\docker-compose.yml config
+
+ docker compose config --format json |
+>>     python -c "import json,sys; from urllib.parse import urlparse; config=json.load(sys.stdin); value=config['services']['app']['environment'].get('DATA__DATABASE_URL'); print('Compose has DATA__DB.URL:', value is not None); print('Compose DB host:', urlparse(value or '').hostname)"
+
+docker compose exec app python -c "from pathlib import Path; from urllib.parse import urlparse; entries=Path('/proc/1/environ').read_bytes().split(b'\0'); env={p.split(b'=',1)[0].decode():p.split(b'=',1)[1].decode() for p in entries if b'=' in p}; print('PID 1 keys:',[k for k in sorted(env) if 'DATABASE' in k or k.startswith('DATA__')]); print('PID 1 DB host:',urlparse(env.get('DATA__DATA__DATABASE_URL','')).hostname); print('PID 1 SSL:',env.get('DATA__DATABASE_SSLMODE'))"
+
+
+docker compose config --format json | python -c "import json,sys; from urllib.parse import urlparse; e=json.load(sys.stdin)['services']['app']['environment']; print('DATA__DATABASE_URL:', urlparse(e.get('DATA__DATABASE_URL','')).hostname); print('DATA__DATA__DATABASE_URL:', urlparse(e.get('DATA__DATA__DATABASE_URL','')).hostname)"
+
+---------- Run ---------
+Set-ExecutionPolicy -Scope Process Bypass
+
+
+$env:OPENROUTER_API_KEY = "<your-openrouter-key>"
+$env:LANGSMITH_API_KEY = "<your-langsmith-key>"
+
+
+------------ The effective non-secret configuration is: ------
+AGENTIC_EXPENSE=true
+DATA__DATABASE_SSLMODE=require
+RUNTIME_TIMEOUT_SECONDS=10
+RUNTIME_MAX_RETRIES=1
+RAG_PERSIST_DIRECTORY=/tmp/chroma
+OTEL_CONSOLE_TRACE_ENABLED=true
+OBSERVABILITY__TRACING_ENABLED=true
+OBSERVABILITY__METRICS_ENABLED=true
+OBSERVABILITY__CONSOLE_METRIC_EXPORTER_ENABLED=true
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=expense-ai-oracle-demo
+CONFIG_DEBUG=false

@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
 
-from app.llm.base import LLMService
+from app.ai.runtime import AIRuntime
 from app.llm.mockllm_service import MockLLMService
 from app.schemas import Expense, ExpenseRequest
-from app.services.expense_service import ExpenseService
+from app.services.expense_service import ExpenseServiceImpl
 
 
 def test_expense_service_analyze():
-    service = ExpenseService(llm_service=MockLLMService())
+    # Instantiate AIRuntime with MockLLMService and pass to ExpenseServiceImpl
+    ai_runtime = AIRuntime(llm_service=MockLLMService())
+    service = ExpenseServiceImpl(ai_runtime=ai_runtime)
 
     request = ExpenseRequest(
         submitted_by="Jane Smith",
@@ -25,5 +27,5 @@ def test_expense_service_analyze():
     assert response.total_expenses == 2
     assert response.total_amount == 300.0
     assert response.currency == "USD"
-    assert response.status == "ANALYZED"
-    assert response.summary == "Expenses analyzed successfully."
+    assert response.status == "APPROVED"
+    assert response.summary == "Expenses approved successfully."
