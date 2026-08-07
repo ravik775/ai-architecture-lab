@@ -13,6 +13,8 @@ Each project below isolates one concern of modern AI-system design — an agent 
 
 **Every technical claim in this README and in [`Project-Portfolio-Analysis.md`](Project-Portfolio-Analysis.md) was verified directly against source code, tests, and `git log` on `main`** — not copied from each project's own marketing copy. Where a project has a known gap, it's disclosed here rather than hidden; the full analysis linked at the bottom documents exact file/line findings and a remediation plan for each one.
 
+**Design starts before the first line of code.** Every project in this repo is built from the same reusable, TOGAF-inspired architecture-governance prompt — [`PromptTemplate.md`](PromptTemplate.md) — that forces architecture drivers, trade-off analysis, technology selection criteria, security/observability/reliability requirements, and evidence-based verification to be worked out up front. [`PromptExample.md`](PromptExample.md) is that template fully applied to a real project (the weather application), showing the drivers → trade-off matrix → technology selection → traceability chain in practice. Start there for the fastest read on how these projects are actually designed, not just what they build.
+
 ## Skills demonstrated across the portfolio
 
 | Concept | Project(s) |
