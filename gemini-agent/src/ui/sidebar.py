@@ -7,7 +7,12 @@ from pathlib import Path
 import streamlit as st
 
 from src.agent.llm import LiteLLMChatModel, is_capacity_error
-from src.config import DEFAULT_PROVIDER, MAX_MODEL_CHAIN, PROVIDERS, get_api_key
+from src.config import (
+    ALL_MODELS,
+    MAX_MODEL_CHAIN,
+    find_provider_for_model,
+    resolve_api_key_for_model,
+)
 from src.persistence import save_exhausted_models
 from src.project.indexer import analyze_project
 
@@ -65,30 +70,19 @@ def render_sidebar() -> None:
     st.sidebar.divider()
     st.sidebar.header("Model")
 
-    provider_names = list(PROVIDERS.keys())
-    default_provider = st.session_state.get("provider", DEFAULT_PROVIDER)
-    provider = st.sidebar.selectbox(
-        "Provider",
-        provider_names,
-        index=provider_names.index(default_provider) if default_provider in provider_names else 0,
-    )
-    st.session_state.provider = provider
-    provider_cfg = PROVIDERS[provider]
-
     exhausted = st.session_state.setdefault("exhausted_models", {})
-    models = provider_cfg["models"]
     # Exhausted models are removed from what you can pick, not just skipped
     # at runtime - you restore one explicitly (below) when you want it back.
-    available_models = [m for m in models if m not in exhausted]
+    available_models = [m for m in ALL_MODELS if m not in exhausted]
 
     if not available_models:
         st.sidebar.error(
-            "Every model for this provider is currently marked exhausted/unavailable. "
-            "Restore one below, pick a different provider, or add a custom override."
+            "Every configured model is currently marked exhausted/unavailable. "
+            "Restore one below, or add a custom override."
         )
         st.session_state.model_chain = []
     else:
-        chain_state_key = f"model_chain_selection_{provider}"
+        chain_state_key = "model_chain_selection"
         default_selection = [
             m for m in st.session_state.get(chain_state_key, available_models[:1]) if m in available_models
         ]
@@ -98,30 +92,40 @@ def render_sidebar() -> None:
         # filtering `available_models` alone doesn't clear an
         # already-selected model out of the widget's own bound state once
         # it's exhausted. Prune it here, before the widget reads that key.
-        multiselect_key = f"model_multiselect_{provider}"
-        if multiselect_key in st.session_state:
+        # Streamlit warns (harmlessly, but noisily) if `default=` is passed
+        # once a widget's key already has a session_state value, so only
+        # pass `default=` the first time this key is ever created.
+        multiselect_key = "model_multiselect_global"
+        key_already_set = multiselect_key in st.session_state
+        if key_already_set:
             st.session_state[multiselect_key] = [
                 m for m in st.session_state[multiselect_key] if m in available_models
             ]
 
-        selected = st.sidebar.multiselect(
-            f"Models — priority order, up to {MAX_MODEL_CHAIN}",
-            available_models,
-            default=default_selection,
-            max_selections=MAX_MODEL_CHAIN,
-            key=multiselect_key,
-            help=(
-                "If the first model hits a rate limit or runs out of credits, the next one "
-                "in this list is tried automatically, with no interruption. Exhausted models "
-                "are removed from this list until you restore them below."
+        multiselect_kwargs: dict = {
+            "options": available_models,
+            "max_selections": MAX_MODEL_CHAIN,
+            "key": multiselect_key,
+            "help": (
+                "Pick up to 4 models from any provider, in priority order — mix providers "
+                "freely, each resolves its own API key. If one hits a rate limit or runs out "
+                "of credits, the next is tried automatically. Exhausted models are removed "
+                "from this list until you restore them below."
             ),
+        }
+        if not key_already_set:
+            multiselect_kwargs["default"] = default_selection
+
+        selected = st.sidebar.multiselect(
+            f"Models — priority order, up to {MAX_MODEL_CHAIN} (any provider)",
+            **multiselect_kwargs,
         )
         st.session_state[chain_state_key] = selected
 
         custom_model = st.sidebar.text_input(
             "Custom model override (optional, tried first)",
-            placeholder=f"{models[0].split('/')[0]}/...",
-            key=f"custom_model_{provider}",
+            placeholder="openrouter/... or huggingface/... or ollama_chat/...",
+            key="custom_model_global",
         )
 
         chain = ([custom_model.strip()] if custom_model.strip() else []) + selected
@@ -146,26 +150,35 @@ def render_sidebar() -> None:
                 save_exhausted_models({})
                 st.rerun()
 
-    if not provider_cfg["api_key_env_vars"]:
-        # e.g. Ollama - runs locally, nothing to authenticate.
-        st.session_state.api_key = None
-        st.session_state.api_key_ready = True
-        st.sidebar.caption(
-            "Runs locally — no API key needed. Make sure Ollama is running "
-            f"and the model is pulled ({provider_cfg['key_url']})."
-        )
-    else:
-        env_var_names = " / ".join(provider_cfg["api_key_env_vars"])
-        env_key = get_api_key(provider_cfg["api_key_env_vars"])
-        st.session_state.api_key = env_key
-        st.session_state.api_key_ready = bool(env_key)
-        if env_key:
-            st.sidebar.caption(f"API key loaded from environment ({env_var_names}).")
+    # Each selected model resolves its own key against whichever provider it
+    # belongs to - show status per distinct provider actually represented in
+    # the chain, not one single "selected provider" (there isn't one anymore).
+    st.sidebar.caption("API keys for your selected models:")
+    chain_for_status = st.session_state.get("model_chain") or []
+    shown_providers: set[str] = set()
+    any_model_ready = False
+    for m in chain_for_status:
+        found = find_provider_for_model(m)
+        if found is None:
+            st.sidebar.caption(f"⚠️ `{m}`: unrecognized provider prefix.")
+            continue
+        pname, pcfg = found
+        if pname in shown_providers:
+            continue
+        shown_providers.add(pname)
+        if not pcfg["api_key_env_vars"]:
+            st.sidebar.caption(f"✅ {pname}: runs locally, no key needed.")
+            any_model_ready = True
         else:
-            st.sidebar.error(
-                f"{env_var_names} not set. Add it to `.env` in the project root "
-                f"(gemini-agent/.env) — get a key at {provider_cfg['key_url']}, then restart the app."
-            )
+            env_var_names = " / ".join(pcfg["api_key_env_vars"])
+            if resolve_api_key_for_model(m):
+                st.sidebar.caption(f"✅ {pname}: key loaded ({env_var_names}).")
+                any_model_ready = True
+            else:
+                st.sidebar.caption(
+                    f"❌ {pname}: {env_var_names} not set — get one at {pcfg['key_url']}."
+                )
+    st.session_state.api_key_ready = bool(chain_for_status) and any_model_ready
 
     st.sidebar.divider()
     st.sidebar.header("Analysis")
@@ -180,8 +193,12 @@ def render_sidebar() -> None:
             attempt_chain = [m for m in st.session_state.model_chain if m not in exhausted] or st.session_state.model_chain
             last_exc: Exception | None = None
             for candidate in attempt_chain:
+                candidate_key = resolve_api_key_for_model(candidate)
+                found = find_provider_for_model(candidate)
+                if found and found[1]["api_key_env_vars"] and not candidate_key:
+                    continue  # no key for this one - skip straight to the next candidate
                 with st.sidebar.status(f"Analyzing project… ({candidate})"):
-                    llm = LiteLLMChatModel(model=candidate, api_key=st.session_state.api_key)
+                    llm = LiteLLMChatModel(model=candidate, api_key=candidate_key)
                     try:
                         st.session_state.project_summary = analyze_project(Path(new_path), llm)
                         last_exc = None

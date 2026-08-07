@@ -22,16 +22,21 @@ st.session_state.setdefault("model_chain", [PROVIDERS[DEFAULT_PROVIDER]["models"
 # Loaded from disk (not just {}) so a model that failed before a restart
 # doesn't silently look "available" again on the next run.
 st.session_state.setdefault("exhausted_models", load_exhausted_models())
-st.session_state.setdefault("api_key", None)
 st.session_state.setdefault("api_key_ready", False)
 st.session_state.setdefault("project_summary", None)
 st.session_state.setdefault("lc_messages", [])
 st.session_state.setdefault("turn_error", None)
 st.session_state.setdefault("turn_fallback_note", None)
+st.session_state.setdefault("turn_compaction_note", None)
 st.session_state.setdefault("turn_attempts", [])
 st.session_state.setdefault("enhance_prompt_enabled", False)
 st.session_state.setdefault("pending_enhancement", None)
 st.session_state.setdefault("pending_store", PendingChangeStore())
+st.session_state.setdefault("enable_phase_planning", False)
+# task_id -> {"request_preview": str, "phases": [{"title","instructions","status"}], "current": int}
+# Keyed per originating request so multiple large requests never collide.
+st.session_state.setdefault("phase_tasks", {})
+st.session_state.setdefault("active_phase_task_id", None)
 
 st.title("🛠️ Local Coding Agent")
 st.caption(

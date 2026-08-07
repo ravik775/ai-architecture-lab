@@ -29,6 +29,21 @@ prompt_enhancer:
   model: "ollama_chat/llama3.2:1b"
   api_key_env_vars: []
 
+# Used by the chat panel's "Break large requests into phases" checkbox: a
+# pre-execution planning step that decomposes a big/complex incoming request
+# into a small number of self-contained phases *before* any agent turn runs,
+# so no single turn ever needs the whole original request in context. Fixed
+# to a local model under 4B params, same reasoning as prompt_enhancer above:
+# this is a plain-text decomposition task (no tool-calling), which small
+# local models handle reliably, and it means phase planning works with zero
+# API key regardless of which provider the main chat is using. llama3.2:3b
+# (not the 1b used for the enhancer) because splitting a large spec into
+# well-scoped, self-contained phases is a harder instruction-following task
+# than a one-line prompt rewrite - the extra headroom matters here.
+phase_planner:
+  model: "ollama_chat/llama3.2:3b"
+  api_key_env_vars: []
+
 providers:
   "Gemini (Google AI Studio)":
     api_key_env_vars: ["GEMINI_API_KEY", "GOOGLE_API_KEY"]

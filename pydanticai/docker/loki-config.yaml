@@ -1,0 +1,30 @@
+# Minimal single-process Loki config - local demo scale only, optional
+# profile. weather-app does NOT push logs here directly (structured JSON
+# logs go to stdout, per Docker's own logging driver); this is provided
+# so a local Promtail/Docker-driver setup has somewhere to ship them if
+# the user opts into the `optional-loki` profile.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h

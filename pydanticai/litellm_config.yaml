@@ -1,0 +1,21 @@
+# LiteLLM Proxy configuration - fronts OpenRouter with a stable OpenAI-compatible
+# /v1 endpoint + virtual key, so app/agent/agent.py never sees the real
+# OPENROUTER_API_KEY. Model aliases here MUST match AGENT__MODEL_ALIAS /
+# AGENT__FALLBACK_MODEL_ALIAS in .env.
+model_list:
+  - model_name: weather-agent
+    litellm_params:
+      model: openrouter/openai/gpt-oss-20b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: weather-agent-fallback
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-nano-30b-a3b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 30

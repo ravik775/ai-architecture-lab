@@ -41,10 +41,16 @@ def _load_config(path: Path) -> tuple[dict[str, dict], str, dict]:
         "api_key_env_vars": tuple(enhancer_cfg.get("api_key_env_vars", ())),
     }
 
-    return providers, data["default_provider"], prompt_enhancer
+    planner_cfg = data.get("phase_planner") or {}
+    phase_planner = {
+        "model": planner_cfg.get("model"),
+        "api_key_env_vars": tuple(planner_cfg.get("api_key_env_vars", ())),
+    }
+
+    return providers, data["default_provider"], prompt_enhancer, phase_planner
 
 
-PROVIDERS, DEFAULT_PROVIDER, PROMPT_ENHANCER = _load_config(MODELS_CONFIG_PATH)
+PROVIDERS, DEFAULT_PROVIDER, PROMPT_ENHANCER, PHASE_PLANNER = _load_config(MODELS_CONFIG_PATH)
 
 
 def get_api_key(env_vars: tuple[str, ...]) -> str | None:
@@ -53,6 +59,46 @@ def get_api_key(env_vars: tuple[str, ...]) -> str | None:
         if value:
             return value
     return None
+
+
+def _model_prefix(model: str) -> str:
+    return model.split("/", 1)[0] if "/" in model else model
+
+
+# Maps each provider's litellm routing prefix (e.g. "openrouter", "huggingface",
+# "ollama_chat") to that provider's (name, config), derived from the models
+# each one actually declares in models.yaml rather than hardcoded here.
+_PREFIX_TO_PROVIDER: dict[str, tuple[str, dict]] = {}
+for _provider_name, _provider_cfg in PROVIDERS.items():
+    for _m in _provider_cfg["models"]:
+        _PREFIX_TO_PROVIDER.setdefault(_model_prefix(_m), (_provider_name, _provider_cfg))
+
+# Every model from every provider, flattened - the sidebar's model picker is
+# global (any provider, mixed in one fallback chain) rather than scoped to a
+# single selected provider.
+ALL_MODELS: list[str] = [m for _cfg in PROVIDERS.values() for m in _cfg["models"]]
+
+
+def find_provider_for_model(model: str) -> tuple[str, dict] | None:
+    """(provider_name, provider_cfg) for whichever configured provider owns
+    `model`, matched by litellm routing prefix — independent of any
+    single "selected provider" concept."""
+    return _PREFIX_TO_PROVIDER.get(_model_prefix(model))
+
+
+def resolve_api_key_for_model(model: str) -> str | None:
+    """The right API key for `model`, based on which configured provider it
+    belongs to. This is what lets a fallback chain mix models from
+    different providers (e.g. OpenRouter first, Hugging Face as a
+    fallback): each model resolves its own key instead of every model in
+    the chain sharing one provider's key."""
+    found = find_provider_for_model(model)
+    if found is None:
+        return None
+    _, provider_cfg = found
+    if not provider_cfg["api_key_env_vars"]:
+        return None  # e.g. Ollama - no key needed
+    return get_api_key(provider_cfg["api_key_env_vars"])
 
 
 # --- Project indexing ---------------------------------------------------------

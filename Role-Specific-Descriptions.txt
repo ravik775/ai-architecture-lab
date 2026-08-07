@@ -1,0 +1,135 @@
+================================================================================
+EXPENSE AI – ROLE-SPECIFIC PROJECT DESCRIPTIONS
+Tailored for AI Solution Architect | Senior Solution Architect | Technical Architect
+================================================================================
+
+ROLE 1: AI SOLUTION ARCHITECT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Focus Areas: LLM integration, workflow orchestration, observability, scalability
+
+Expense AI demonstrates production-grade agentic AI at scale. I designed a provider-agnostic LLM integration using LiteLLM to enable runtime provider switching without code changes. The workflow orchestration layer (LangGraph) routes requests based on risk signals: low-risk auto-approvals, high-value submissions to human review with durable PostgreSQL checkpoints. The RAG pipeline retrieves policy context from ChromaDB.
+
+Production resilience is built into the core: retry, timeout, cache, circuit breaker, and guardrail policies compose into a single reusable pipeline. Observability is first-class: structured logs, OpenTelemetry tracing, token tracking, cost estimation, LangSmith graph visibility. The architecture supports both lightweight demo mode and fully agentic deployment.
+
+Key Innovation: The policy-based resilience pattern is composable—each policy (retry, circuit breaker, timeout, etc.) is independent and testable. This allows features to be added or modified without touching the core orchestration logic. The provider abstraction keeps the entire workflow vendor-neutral: swap providers at runtime through configuration.
+
+---
+
+ROLE 2: SENIOR SOLUTION ARCHITECT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Focus Areas: Enterprise requirements, scalability, operations, team enablement
+
+Expense AI is a reference architecture for agentic AI in regulated, cost-sensitive environments. I engineered a solution that separates API contracts, domain logic, AI orchestration, and provider concerns into independent layers—enabling teams to evolve each without impact.
+
+The service demonstrates how to operate AI reliably: configuration-driven provider management, structured data validation (Pydantic), human-in-the-loop interruption with durable state (PostgreSQL), and comprehensive observability. The resilience pipeline (retry, circuit breaker, timeout, cache, guardrails) is composable, testable, and reusable.
+
+Multi-environment deployment is baked in: lightweight basic mode for local development, full agentic mode for production workflows. Docker Compose orchestration provides operators a clear starting point for managed deployments. The architecture accommodates team growth: as domain knowledge deepens, each layer can be owned independently (API team, domain team, AI team, infrastructure team) without creating merge bottlenecks.
+
+Key Business Value: The design enables incremental vendor migration (swap LLM providers), cost optimization (per-model pricing, token tracking), and risk management (human approval for high-value items, policy guardrails).
+
+---
+
+ROLE 3: TECHNICAL ARCHITECT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Focus Areas: System design, technical depth, engineering patterns, cloud-readiness
+
+Expense AI showcases layered architecture applied to agentic AI:
+
+**Layers:**
+- API boundary (FastAPI/Pydantic)
+- Domain services
+- AI runtime with pluggable policies
+- Provider abstraction (LiteLLM)
+- Storage tiers (PostgreSQL, ChromaDB)
+
+**Design Patterns:**
+The policy-based resilience pipeline is the core pattern. Each policy (retry, timeout, circuit breaker, cache, guardrails) composes independently, enabling isolated testing and controlled evolution. The abstract LLMService interface decouples the domain from vendor-specific code; LiteLLMService is one concrete implementation, MockLLMService another.
+
+**State Management:**
+Event-driven with clean interrupt points. LangGraph models the workflow as a state machine with conditional edges. When approval is required, the workflow interrupts cleanly. PostgreSQL checkpoints preserve state across restarts; resumption is automatic with deterministic thread IDs. This is durable, not just in-memory.
+
+**Observability:**
+Instrumented end-to-end:
+- Structured JSON logs with request correlation (X-Request-ID)
+- OpenTelemetry span hierarchy following GenAI conventions
+- Token/cost tracking at call level (integrated into LiteLLMService)
+- Vendor-neutral telemetry (OTLP export to any collector)
+- LangSmith integration for graph-focused traces
+
+**Deployment:**
+- Dockerfile multistage build (development/production)
+- Docker Compose orchestration with service health verification
+- Configuration precedence: environment variables > YAML > defaults
+- Resource cleanup on shutdown (lifespan context manager)
+- Health checks at app and database levels
+
+**Resilience Composition:**
+```
+observability → provider selection → retrieval → prompt preparation
+             → guardrails → cache → retry → circuit breaker → timeout
+```
+
+Each stage is a policy; policies chain without strong coupling.
+
+---
+
+TABLE: QUICK REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+| Dimension | AI Architect Focus | Senior Architect Focus | Technical Architect Focus |
+|-----------|---|---|---|
+| **Intro** | Provider abstraction & workflow | Enterprise concerns & ops | System design & patterns |
+| **LLM** | LiteLLM switching, structured output, cost | Provider fallback, cost governance | Abstract interface, composition |
+| **Workflow** | Orchestration, approval routing | Durability, recovery, SLA | State machine, interrupt points |
+| **Data** | RAG retrieval, policy context | Persistence, backup | Storage layers, schema design |
+| **Resilience** | Retry, timeout, circuit breaker | Observability, operational signals | Policy pipeline, composition |
+| **Observability** | Tracing, cost tracking | Cost management, dashboards | Instrumentation, telemetry paths |
+| **Deployment** | Multi-provider, scalability | Environment management, teams | Containerization, config precedence |
+| **Messaging** | "Agentic at scale" | "Enterprise-ready, team-friendly" | "Clean architecture, resilient" |
+
+---
+
+INTERVIEW PREP BY ROLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**AI Solution Architect Interview:**
+Q: "How do you handle vendor lock-in with LLMs?"
+A: [Discuss LiteLLM abstraction, runtime provider switching, mock implementation for testing]
+
+Q: "What's your approach to LLM cost management?"
+A: [Token tracking, cost estimation, cost-based routing, provider fallback]
+
+Q: "How do you ensure LLM workflow reliability?"
+A: [Retry policies, timeout management, structured output validation, human-in-the-loop interrupts]
+
+---
+
+**Senior Solution Architect Interview:**
+Q: "How would you operationalize this for a large team?"
+A: [Discuss layered separation, independent team ownership, configuration-driven management]
+
+Q: "What's the operational story for running this in production?"
+A: [Docker Compose for local dev, configuration precedence, health checks, resource cleanup, PostgreSQL for state]
+
+Q: "How do you handle cost governance?"
+A: [Token tracking, cost estimation, structured logging with correlation, observability dashboards]
+
+---
+
+**Technical Architect Interview:**
+Q: "Walk me through your design decisions."
+A: [Discuss layers, policy pattern, state management with interrupts, checkpoint persistence]
+
+Q: "How would you extend the resilience pipeline?"
+A: [Add new policy class inheriting from base, compose into pipeline, test in isolation]
+
+Q: "What if PostgreSQL becomes unavailable?"
+A: [Service falls back to basic mode (no checkpointing); pending approvals wait; resumption happens when DB recovers]
+
+---
+
+END OF ROLE-SPECIFIC DESCRIPTIONS
+================================================================================

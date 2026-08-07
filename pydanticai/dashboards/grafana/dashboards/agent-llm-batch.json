@@ -1,0 +1,128 @@
+{
+  "title": "Weather App - Agent, LLM & Batch",
+  "uid": "weather-agent-llm-batch",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "utc",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["weather-intelligence-agent"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Agent runs by status",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (status) (rate(agent_runs_total[5m]))", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Agent run duration (p50/p95/p99)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(agent_run_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(agent_run_duration_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(agent_run_duration_seconds_bucket[5m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tool call p95 duration by tool",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, tool_name) (rate(tool_call_duration_seconds_bucket[5m])))", "legendFormat": "{{tool_name}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Tool call failures by tool",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "sum by (tool_name) (rate(tool_calls_total{status=\"failure\"}[5m]))", "legendFormat": "{{tool_name}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "LiteLLM Proxy request duration (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(litellm_request_duration_seconds_bucket[5m])))" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "LLM token usage rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        { "expr": "sum by (direction) (rate(llm_tokens_total[5m]))", "legendFormat": "{{direction}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Estimated LLM cost rate (USD/s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(llm_estimated_cost_usd_total[5m]))" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Structured output validation failures",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 24 },
+      "targets": [{ "expr": "sum(rate(structured_output_failures_total[5m]))" }]
+    },
+    {
+      "id": 9,
+      "title": "Daily collection runs by status",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 24 },
+      "targets": [
+        { "expr": "sum by (status) (rate(batch_runs_total[5m]))", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Locations succeeded vs. failed per batch",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 9, "x": 15, "y": 24 },
+      "targets": [
+        { "expr": "sum by (result) (rate(batch_locations_total[5m]))", "legendFormat": "{{result}}" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Batch run duration (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(batch_run_duration_seconds_bucket[5m])))" }
+      ]
+    }
+  ]
+}

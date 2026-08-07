@@ -10,6 +10,7 @@ which litellm translates for Gemini (or any other provider) under the hood.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any, Optional, Sequence, Union
 
 import litellm
@@ -111,6 +112,30 @@ def _parse_tool_calls(raw_tool_calls: Any) -> list[dict]:
     return parsed
 
 
+def _extract_fallback_tool_call(content: str, valid_tool_names: set[str]) -> Optional[dict]:
+    """Some models — especially smaller/weaker ones, seen repeatedly with
+    small local models via Ollama — describe a tool call as plain JSON text
+    in the message content instead of using the API's structured
+    tool-calling mechanism, even when given a `tools` schema. If the whole
+    response is exactly one such JSON object naming a real bound tool,
+    treat it as if the API had returned it as a proper tool call, rather
+    than showing raw JSON to the user as if it were a text reply."""
+    text = content.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    name = payload.get("name")
+    args = payload.get("arguments", payload.get("parameters"))
+    if not isinstance(name, str) or name not in valid_tool_names or not isinstance(args, dict):
+        return None
+    return {"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:8]}", "type": "tool_call"}
+
+
 class LiteLLMChatModel(BaseChatModel):
     """LangChain-compatible chat model backed by `litellm.completion`."""
 
@@ -124,6 +149,15 @@ class LiteLLMChatModel(BaseChatModel):
     # default avoids that failure mode without being too tight for a
     # normal file-edit response.
     max_tokens: Optional[int] = 8192
+    # Ollama's default context window is 4096 tokens regardless of what the
+    # underlying model actually supports. Our system prompt + 6 tool
+    # schemas + conversation history blow past that fast (a single large
+    # user message can exceed it alone), silently truncating older context
+    # - including, worst case, the tool definitions themselves, which
+    # manifests as the model printing a tool call as plain JSON text
+    # instead of actually invoking it. None = leave provider default
+    # (non-Ollama models ignore this field entirely, see below).
+    num_ctx: Optional[int] = None
     bound_tools: list[dict] = Field(default_factory=list)
     # litellm's own retry (exponential backoff) for transient errors -
     # rate limits, provider capacity, timeouts - common on free-tier models.
@@ -144,6 +178,7 @@ class LiteLLMChatModel(BaseChatModel):
             api_key=self.api_key,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
+            num_ctx=self.num_ctx,
             bound_tools=formatted,
             num_retries=self.num_retries,
         )
@@ -167,6 +202,14 @@ class LiteLLMChatModel(BaseChatModel):
         # instead. Skip it for this provider rather than spam harmless noise.
         if not self.model.startswith("huggingface/"):
             call_kwargs["num_retries"] = self.num_retries
+        if self.model.startswith("ollama_chat/") or self.model.startswith("ollama/"):
+            # A modest safety-net bump over Ollama's 4096 default - not the
+            # primary fix for large prompts. Relying on ever-larger context
+            # windows to cover growing conversation history costs RAM/CPU
+            # and still degrades: the right fix is keeping each turn's
+            # actual prompt small (phased, focused instructions) rather
+            # than accumulating an entire spec into every request.
+            call_kwargs["num_ctx"] = self.num_ctx or 8192
         if self.api_key:
             call_kwargs["api_key"] = self.api_key
         if self.max_tokens:
@@ -187,8 +230,14 @@ class LiteLLMChatModel(BaseChatModel):
         response = litellm.completion(**call_kwargs)
         message = response.choices[0].message
 
-        ai_message = AIMessage(
-            content=message.content or "",
-            tool_calls=_parse_tool_calls(getattr(message, "tool_calls", None)),
-        )
+        content = message.content or ""
+        tool_calls = _parse_tool_calls(getattr(message, "tool_calls", None))
+        if not tool_calls and self.bound_tools:
+            valid_names = {t["function"]["name"] for t in self.bound_tools}
+            fallback = _extract_fallback_tool_call(content, valid_names)
+            if fallback:
+                tool_calls = [fallback]
+                content = ""
+
+        ai_message = AIMessage(content=content, tool_calls=tool_calls)
         return ChatResult(generations=[ChatGeneration(message=ai_message)])

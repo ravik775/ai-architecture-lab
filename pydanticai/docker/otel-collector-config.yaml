@@ -1,0 +1,69 @@
+# Traces only: weather-app exports metrics as a native /metrics endpoint
+# scraped directly by Prometheus (see app/observability/metrics.py for why -
+# running a second OTLP metrics pipeline through this collector would be
+# infrastructure with no measured benefit for a single-replica demo app).
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Makes the "keep failures, sample successes" decision that no head
+  # sampler can make correctly - see app/observability/tracing.py's module
+  # docstring. Buffers spans per trace_id for `decision_wait` before
+  # deciding; a trace whose last span arrives after that window may be
+  # decided (and exported) before it's fully complete - a known tail-
+  # sampling trade-off, not a bug. Requires every span for a given trace to
+  # reach THIS collector instance - fine for this app's single-instance
+  # compose setup, would need a load-balancing exporter in front of >1
+  # collector replica (same single-replica scope as the rest of this app;
+  # see README's Known limitations).
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: force-traced-always
+        type: boolean_attribute
+        boolean_attribute:
+          key: force_traced
+          value: true
+      - name: baseline-probabilistic
+        type: probabilistic
+        # Set via OTEL_TAIL_SAMPLING_BASELINE_PERCENT in .env (default 100
+        # = keep every successful trace too). This is the ONLY knob left
+        # for reducing successful-trace volume - the app itself no longer
+        # has a sampling-ratio setting; see ObservabilitySettings' note.
+        probabilistic:
+          sampling_percentage: ${env:OTEL_TAIL_SAMPLING_BASELINE_PERCENT}
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  debug:
+    verbosity: basic
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      # tail_sampling must run before batch - it needs individual spans
+      # grouped by trace_id to make its per-trace decision; batching first
+      # would mix spans from different traces into one payload.
+      processors: [tail_sampling, batch]
+      exporters: [otlp/tempo, debug]

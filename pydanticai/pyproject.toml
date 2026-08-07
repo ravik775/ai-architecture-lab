@@ -1,0 +1,53 @@
+[project]
+name = "weather-intelligence-agent"
+version = "0.1.0"
+description = "Lightweight Weather Intelligence Agent: FastAPI + PydanticAI + Open-Meteo + SQLite + OpenTelemetry"
+authors = [{ name = "Ravi K", email = "ravik775@gmail.com" }]
+requires-python = ">=3.12"
+readme = "README.md"
+
+dependencies = [
+    "fastapi>=0.115,<0.116",
+    "uvicorn[standard]>=0.32,<0.33",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.6,<3",
+    "pydantic-ai-slim[openai]>=0.0.14",
+    "httpx[http2]>=0.27,<0.28",
+    "sqlalchemy[asyncio]>=2.0,<2.1",
+    "aiosqlite>=0.20,<0.21",
+    "alembic>=1.13,<2",
+    "apscheduler>=3.10,<4",
+    "opentelemetry-api>=1.27,<2",
+    "opentelemetry-sdk>=1.27,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.27,<2",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-httpx>=0.48b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
+    "prometheus-client>=0.21,<0.22",
+    "python-json-logger>=2.0,<3",
+    "tenacity>=9.0,<10",
+    "nicegui>=3.2.0",
+    "opentelemetry-processor-baggage>=0.65b0",
+    "pyjwt>=2.9,<3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.24,<0.25",
+    "pytest-cov>=6.0,<7",
+    "respx>=0.21,<0.22",
+    "ruff>=0.7,<0.8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: weather-intelligence-agent
+    orgId: 1
+    folder: "Weather Intelligence Agent"
+    type: file
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # Port 9464, not 8000 (the public API/UI port) - /metrics runs on its own
+  # port via prometheus_client's own server, reachable here over the
+  # internal Docker network without ever being published to the host.
+  - job_name: weather-app
+    static_configs:
+      - targets: ["weather-app:9464"]
+    metrics_path: /metrics
