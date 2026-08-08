@@ -1,0 +1,96 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: research-assistant
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/research_assistant}
+    username: ${SPRING_DATASOURCE_USERNAME:research_assistant}
+    password: ${SPRING_DATASOURCE_PASSWORD:research_assistant}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only validates the entity mapping matches it.
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+
+  ai:
+    # OpenRouter is OpenAI-compatible, so the OpenAI starter is reused as the client.
+    # base-url deliberately omits "/v1" — Spring AI's OpenAI client appends it itself;
+    # including it here causes a double "/v1/v1/..." 404 (spring-projects/spring-ai#2255).
+    openai:
+      api-key: ${OPENROUTER_API_KEY}
+      base-url: https://openrouter.ai/api
+      chat:
+        options:
+          model: ${OPENROUTER_MODEL:qwen/qwen3-coder:free}
+    mcp:
+      client:
+        enabled: true
+        name: research-assistant-mcp-client
+        type: SYNC
+        request-timeout: 20s
+        sse:
+          connections:
+            gateway:
+              url: ${MCP_GATEWAY_URL:http://localhost:8811}
+              # /sse is Spring AI's default endpoint path for this transport. Docker's
+              # MCP Gateway --transport=sse is expected to match it, but this is the one
+              # piece of wiring I could not independently confirm against gateway source
+              # in this environment — verify against the gateway's actual logs on first run.
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/mcp-demo}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+  tracing:
+    sampling:
+      probability: 1.0 # trace every request — this is a demo, not a high-throughput prod service
+
+resilience4j:
+  ratelimiter:
+    instances:
+      chat:
+        limit-for-period: 10
+        limit-refresh-period: 60s
+        timeout-duration: 0s
+  bulkhead:
+    instances:
+      chat:
+        max-concurrent-calls: 5
+        max-wait-duration: 0s
+  circuitbreaker:
+    instances:
+      chat:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+  timelimiter:
+    instances:
+      chat:
+        timeout-duration: 15s
+        cancel-running-future: true
+
+logging:
+  level:
+    org.springframework.security: INFO

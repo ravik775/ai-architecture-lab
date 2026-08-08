@@ -1,0 +1,115 @@
+name: mcp-research-assistant
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: research_assistant
+      POSTGRES_USER: research_assistant
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U research_assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Dev-mode Keycloak: single realm imported from ./keycloak/realm-export.json.
+  # KC_HOSTNAME is pinned to host.docker.internal so the issuer/JWKS URL baked into
+  # tokens is reachable both from the host (curl, via published port 8081) and from
+  # the app container (Docker Desktop resolves host.docker.internal automatically;
+  # extra_hosts below makes the same trick work on Linux Docker Engine too).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: host.docker.internal
+      KC_HOSTNAME_PORT: "8081"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # Jaeger all-in-one: single container, in-memory storage, own UI. Deliberately not
+  # the Tempo/Loki/Prometheus/Grafana stack — this demo only needs to prove one thing,
+  # a full request trace, not a production observability platform.
+  #
+  # NOTE: pinned to `latest` rather than a specific patch tag. I could not get a
+  # reliable current-tag read from Docker Hub's API in this environment (it kept
+  # returning stale 2017-era data), and I'd rather say so than invent a version
+  # number. Pin this to a real tag (`docker image inspect jaegertracing/all-in-one:latest`
+  # after first pull, then swap it in) before treating this as a reproducible build.
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+
+  # Docker MCP Gateway: fronts the containerized `curl` MCP server from Docker's
+  # catalog (see ARCHITECTURE.md for why `curl`, not `duckduckgo` as originally
+  # designed — the catalog server that reference examples pointed to no longer exists
+  # in Docker's live default catalog). `use_api_socket: true` grants a scoped,
+  # authenticated Docker API socket (Compose feature) instead of a raw bind-mount of
+  # /var/run/docker.sock, so the gateway can launch the catalog server container
+  # without full host Docker access.
+  #
+  # No host port is published: only the `app` container needs to reach this gateway,
+  # over the internal Compose network at mcp-gateway:8811.
+  #
+  # --allow-unauthenticated: the gateway normally requires a random per-run Bearer
+  # token (printed to its own logs) on every SSE request, to stop DNS-rebinding
+  # attacks against a localhost-bound gateway. Spring AI's SSE MCP client has no
+  # supported way yet to attach a custom header to that connection (open upstream
+  # issue: spring-projects/spring-ai#4305), so token auth can't currently be wired up
+  # from this app. Disabling it is accepted here because the gateway is unreachable
+  # from outside the Compose network in the first place; see ARCHITECTURE.md.
+  mcp-gateway:
+    image: docker/mcp-gateway:v2
+    use_api_socket: true
+    command:
+      - --transport=sse
+      - --servers=curl
+      - --allow-unauthenticated
+
+  app:
+    build:
+      context: ./research-assistant
+    ports:
+      - "8080:8080"
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-qwen/qwen3-coder:free}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/research_assistant
+      SPRING_DATASOURCE_USERNAME: research_assistant
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_ISSUER_URI: http://host.docker.internal:8081/realms/mcp-demo
+      MCP_GATEWAY_URL: http://mcp-gateway:8811
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres-data:
