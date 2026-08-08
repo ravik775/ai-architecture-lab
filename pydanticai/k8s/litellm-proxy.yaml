@@ -1,0 +1,109 @@
+# Stateless proxy - the one component in this whole manifest set that
+# scales trivially. Bump `replicas:` freely; there's no local state and no
+# single-writer constraint.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+    app.kubernetes.io/part-of: weather-intelligence-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm-proxy
+        app.kubernetes.io/part-of: weather-intelligence-agent
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: litellm-proxy
+          image: ghcr.io/berriai/litellm:v1.90.2
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 4000
+          envFrom:
+            - secretRef:
+                name: litellm-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              memory: 768Mi
+              cpu: 250m
+            limits:
+              # Docker Compose's mem_limit: 1024m ("confirmed sufficient"
+              # there) was NOT enough here - verified live: OOMKilled
+              # (exit 137, zero log output) at a 1Gi K8s limit on this
+              # cluster. Kubernetes/cgroup memory accounting isn't
+              # identical to Docker Compose's mem_limit enforcement, so
+              # the number doesn't automatically carry over between the
+              # two - 2Gi confirmed sufficient here, verified the same way
+              # (live pod, not assumed).
+              memory: 2Gi
+              cpu: "1"
+          livenessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=3)"
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=3)"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+        - name: tmp
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-proxy
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: litellm-proxy
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http

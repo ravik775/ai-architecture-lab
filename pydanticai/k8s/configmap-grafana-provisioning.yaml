@@ -1,0 +1,59 @@
+# Verbatim copies of dashboards/grafana/provisioning/*/*.yaml.
+#
+# `allowUiUpdates: false` on the dashboards provider is an addition versus
+# the docker-compose setup, not present in the original file - it's a
+# direct implementation of "no one except the app writes dashboards": file
+# -provisioned dashboards are code (this ConfigMap), never edited through
+# the Grafana UI even by an authenticated admin. Without it, Grafana
+# allows local UI edits to a provisioned dashboard that get silently
+# clobbered on the next provisioning reload - confusing, not a real
+# write path, but worth closing off explicitly rather than relying on
+# "it gets overwritten anyway."
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning-datasources
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  datasources.yaml: |
+    apiVersion: 1
+
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.weatherapp.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://tempo.weatherapp.svc.cluster.local:3200
+        editable: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning-dashboards
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+
+    providers:
+      - name: weather-intelligence-agent
+        orgId: 1
+        folder: "Weather Intelligence Agent"
+        type: file
+        updateIntervalSeconds: 30
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana/dashboards

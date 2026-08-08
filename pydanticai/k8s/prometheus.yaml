@@ -1,0 +1,149 @@
+# StatefulSet + volumeClaimTemplates, not a Deployment - this is the whole
+# "won't cause data loss due to multiple instances" answer for Prometheus.
+# Each replica (prometheus-0, prometheus-1, ...) gets its OWN
+# automatically-provisioned PVC; two replicas can never share one volume
+# and corrupt each other's TSDB, and scaling down does not delete a
+# replica's PVC (data is retained, not lost, verified against
+# Kubernetes's own StatefulSet storage semantics).
+#
+# replicas: 1 by default - matches this project's demo scope. Safe to bump
+# later (each new replica gets its own distinct PVC automatically), BUT be
+# clear about what that buys you: Prometheus has no native sharded-write
+# mode, so N replicas means N fully INDEPENDENT copies of the same data,
+# each scraping on its own, not one coherent scaled-out store - queries
+# against different replicas can disagree slightly (missed scrapes,
+# restart gaps). That's the standard, documented Prometheus HA pattern
+# (redundancy via independent pairs), not a bug in this manifest. If a
+# single global, deduplicated view across replicas is ever needed, the
+# evidence-backed next step is Thanos Query in front of them - out of
+# scope here, deliberately not pre-built (see k8s/DECISIONS.md's D4).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: prometheus
+automountServiceAccountToken: false
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prometheus
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: weather-intelligence-agent
+spec:
+  serviceName: prometheus-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/part-of: weather-intelligence-agent
+    spec:
+      serviceAccountName: prometheus
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.13.2
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            # Deliberately NOT --web.enable-admin-api - that flag exposes
+            # HTTP endpoints to delete series/snapshot the TSDB. Leaving
+            # it off is defense in depth on top of the NetworkPolicy that
+            # already restricts who can reach Prometheus at all.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: prometheus
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-headless
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http

@@ -1,0 +1,146 @@
+# StatefulSet + volumeClaimTemplates for the same data-loss-safety reason
+# as Prometheus and Grafana. Default replicas: 1.
+#
+# UNLIKE Prometheus/Grafana, this one is a hard ceiling, not a soft
+# caveat: this project's tempo.yaml uses local-disk storage
+# (storage.trace.backend: local), and Tempo's own architecture docs state
+# a local backend cannot be shared across replicas in a distributed
+# deployment at all - it's not "divergent copies," it's "traces written
+# to one replica are invisible to queries hitting another." Do not bump
+# replicas past 1 without first migrating storage.trace.backend to an
+# object store (S3/GCS/Azure Blob) in configmap-tempo.yaml - verified
+# against Tempo's storage-architecture documentation, see k8s/DECISIONS.md's D6.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tempo
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: tempo
+automountServiceAccountToken: false
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tempo
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: tempo
+    app.kubernetes.io/part-of: weather-intelligence-agent
+spec:
+  serviceName: tempo-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tempo
+        app.kubernetes.io/part-of: weather-intelligence-agent
+    spec:
+      serviceAccountName: tempo
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tempo
+          image: grafana/tempo:3.0.2
+          imagePullPolicy: IfNotPresent
+          args: ["-config.file=/etc/tempo.yaml"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: http
+              containerPort: 3200
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tempo.yaml
+              subPath: tempo.yaml
+              readOnly: true
+            - name: data
+              mountPath: /var/tempo
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: tempo-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: tempo
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo-headless
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: tempo
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: tempo
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: http
+      port: 3200
+      targetPort: http
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: tempo
+spec:
+  selector:
+    app.kubernetes.io/name: tempo
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: http
+      port: 3200
+      targetPort: http

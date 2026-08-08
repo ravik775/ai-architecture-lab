@@ -1,0 +1,163 @@
+# Pinned to 1 replica deliberately - this app's own SQLite persistence is
+# single-writer (see the project's README, "Known limitations"). Scaling
+# this past 1 replica without first migrating to Postgres would risk
+# exactly the kind of data-corruption-via-concurrent-writers this whole
+# manifest set is designed to avoid for the observability stack. A
+# Deployment (not StatefulSet) is still correct here because the app
+# doesn't need stable network identity or ordered rollout - just one
+# consistently-attached PVC, which a single-replica Deployment + PVC
+# already gives it (ReadWriteOnce is enough for exactly one pod).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: weather-app
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: weather-app
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: weather-app-data
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: weather-app
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-app
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: weather-app
+    app.kubernetes.io/part-of: weather-intelligence-agent
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate - a second pod attaching the same
+    # ReadWriteOnce PVC while the old one is still terminating would fail
+    # to mount, or worse, both processes could momentarily hold the SQLite
+    # file - the same single-writer constraint that governs replica count
+    # governs the rollout strategy too.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: weather-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: weather-app
+        app.kubernetes.io/part-of: weather-intelligence-agent
+    spec:
+      serviceAccountName: weather-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: weather-app
+          # Built locally via docker/Dockerfile (docker-compose builds it
+          # in-place) - push this image to a registry your cluster can
+          # pull from, or `kind load docker-image` / `minikube image load`
+          # for a local cluster, before applying. See k8s/README.md.
+          image: weather-intelligence-agent:local
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: metrics
+              containerPort: 9464
+          envFrom:
+            - configMapRef:
+                name: weather-app-config
+            - secretRef:
+                name: weather-app-secrets
+          env:
+            - name: DATABASE__URL
+              value: "sqlite+aiosqlite:////app/data/weather.db"
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+            - name: nicegui-storage
+              # NiceGUI's app.storage.user (UI session state - login
+              # token, Correlation ID/Trace-checkbox prefs, see
+              # app/ui/pages.py) persists to a file here, relative to
+              # WORKDIR. With readOnlyRootFilesystem: true this MUST be
+              # its own writable mount or it hits the exact
+              # `PermissionError: /app/.nicegui` bug this project already
+              # fixed once in docker/Dockerfile - a different cause
+              # (read-only root fs vs. missing chown), same symptom.
+              # emptyDir is fine: this is ephemeral UI session state, not
+              # data that needs to survive a pod restart.
+              mountPath: /app/.nicegui
+          resources:
+            requests:
+              memory: 384Mi
+              cpu: 250m
+            limits:
+              memory: 768Mi
+              cpu: "1"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            # /health/ready verifies DB connectivity, not just process
+            # liveness - a better readiness signal (README's Observability
+            # section).
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: weather-app-data
+        - name: tmp
+          emptyDir: {}
+        - name: nicegui-storage
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-app
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/name: weather-app
+spec:
+  selector:
+    app.kubernetes.io/name: weather-app
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+    - name: metrics
+      port: 9464
+      targetPort: metrics

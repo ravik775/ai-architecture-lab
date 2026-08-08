@@ -1,0 +1,30 @@
+# Verbatim copy of litellm_config.yaml - keep these in sync manually, or
+# generate this ConfigMap from the source file with
+# `kubectl create configmap litellm-config --from-file=config.yaml=litellm_config.yaml --dry-run=client -o yaml`
+# instead of hand-editing both.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  config.yaml: |
+    model_list:
+      - model_name: weather-agent
+        litellm_params:
+          model: openrouter/openai/gpt-oss-20b:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+      - model_name: weather-agent-fallback
+        litellm_params:
+          model: openrouter/nvidia/nemotron-3-nano-30b-a3b:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+
+    litellm_settings:
+      drop_params: true
+      request_timeout: 30

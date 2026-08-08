@@ -1,0 +1,304 @@
+# Zero-trust namespace: deny everything by default, then allow only the
+# specific flows this app actually needs. This is what makes "only
+# weather-app writes to the observability stack, everyone else is
+# read-only" an enforced property instead of a policy statement:
+#
+#   weather-app -> otel-collector (push traces)      : ALLOWED (the only writer)
+#   weather-app -> litellm-proxy  (agent path only)  : ALLOWED
+#   otel-collector -> tempo       (push traces)       : ALLOWED (the only writer to Tempo)
+#   prometheus -> weather-app:9464 (scrape/pull)      : ALLOWED (this *is* the write
+#                                                        path into Prometheus - it's
+#                                                        pull-based, so nothing else
+#                                                        can inject metrics into it)
+#   grafana -> prometheus, grafana -> tempo           : ALLOWED, read-only by protocol
+#                                                        (a Prometheus/Tempo datasource
+#                                                        client only ever queries - there
+#                                                        is no write API being exposed)
+#   ingress-controller -> grafana                     : ALLOWED (the only external-facing
+#                                                        allow rule in this namespace)
+#   everything else                                   : DENIED
+#
+# Assumes a CNI that enforces NetworkPolicy (Calico, Cilium, GKE Dataplane
+# v2, etc.) - policies are silently no-ops on CNIs that don't (e.g. plain
+# kubenet). Verify with your cluster provider before relying on this as a
+# real boundary.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: weatherapp
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: weatherapp
+spec:
+  # Every pod needs DNS to resolve Service names - without this, the
+  # default-deny-all policy above would break service discovery entirely,
+  # not just lock down app traffic.
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: weather-app-egress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: weather-app
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm-proxy
+      ports:
+        - protocol: TCP
+          port: 4000
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    - to: []
+      # Open-Meteo is a public third-party API outside the cluster -
+      # egress to the internet can't be scoped by podSelector. Restrict
+      # further with an egress firewall/CNI-specific FQDN policy
+      # (e.g. Cilium's toFQDNs) if your cluster supports it - plain
+      # Kubernetes NetworkPolicy has no FQDN-based selector.
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: weather-app-ingress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: weather-app
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9464
+    # weather-app is now externally reachable too (see ingress.yaml) -
+    # port 8000 (the app) is opened to the ingress controller only, same
+    # pattern as grafana-ingress below. Port 9464 (/metrics) stays
+    # restricted to prometheus alone - the Ingress never gets a route to
+    # it (see ingress.yaml), and this rule doesn't grant it one either.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-proxy-ingress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-proxy
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: weather-app
+      ports:
+        - protocol: TCP
+          port: 4000
+  egress:
+    - to: []
+      # OpenRouter (api.openrouter.ai) - public third-party API.
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-policy
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: weather-app
+      ports:
+        - protocol: TCP
+          port: 4318
+        - protocol: TCP
+          port: 4317
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 4317
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tempo-ingress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - protocol: TCP
+          port: 3200
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-ingress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
+
+---
+# Fixes a real bug found in security review, not a preemptive addition:
+# prometheus SCRAPES weather-app, meaning prometheus itself INITIATES that
+# connection - that's egress from prometheus, not ingress. weather-app-
+# ingress (weather-app.yaml's NetworkPolicy) already allows the inbound
+# half from prometheus; this was the missing outbound half. Without it,
+# prometheus falls through to default-deny-all's blanket egress-deny
+# (DNS only) - meaning the moment NetworkPolicy is actually enforced by a
+# real CNI (Calico/Cilium/etc., unlike this Docker Desktop cluster),
+# Prometheus would silently stop scraping weather-app entirely, with no
+# application-level error to explain why.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-egress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: weather-app
+      ports:
+        - protocol: TCP
+          port: 9464
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-ingress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes: [Ingress]
+  ingress:
+    # From the Ingress controller only - adjust the namespaceSelector/
+    # podSelector to match your actual ingress controller's labels
+    # (this example matches the common ingress-nginx install).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-egress
+  namespace: weatherapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 3200

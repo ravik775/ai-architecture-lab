@@ -1,0 +1,24 @@
+# Static scrape target (weather-app's Kubernetes Service DNS name), not
+# kubernetes_sd_configs - a deliberate choice, not a shortcut: this app has
+# exactly one scrape target, and Kubernetes service-discovery would need
+# granting Prometheus a ClusterRole to list/watch pods/services/endpoints
+# cluster-wide - a real privilege increase for what static config already
+# does with zero extra RBAC. Revisit if/when there's more than one
+# scrapeable service.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+
+    scrape_configs:
+      - job_name: weather-app
+        static_configs:
+          - targets: ["weather-app.weatherapp.svc.cluster.local:9464"]
+        metrics_path: /metrics

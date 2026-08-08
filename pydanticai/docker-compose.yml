@@ -145,6 +145,32 @@ services:
     cpus: 0.5
     logging: *default-logging
 
+  # Stops grafana/prometheus/tempo/otel-collector once weather-app has been
+  # down for WATCHDOG_GRACE_PERIOD_SECONDS (default 600 = 10 min) - no
+  # point running the observability stack for an app that isn't up. Needs
+  # the Docker socket to call `docker stop` on sibling containers, which is
+  # effectively root-equivalent access to the whole Docker daemon -
+  # accepted here as a local-demo-only trade-off (same "demo-grade,
+  # explicitly documented" posture as this app's other security shortcuts -
+  # see README's Known limitations). Does NOT restart anything when
+  # weather-app comes back - that's still a manual `docker compose up`.
+  observability-watchdog:
+    image: docker:27-cli
+    profiles: [observability]
+    entrypoint: ["/bin/sh", "/watchdog.sh"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/observability-watchdog.sh:/watchdog.sh:ro
+    environment:
+      WATCHDOG_APP_SERVICE: weather-app
+      WATCHDOG_DEPENDENT_SERVICES: "grafana prometheus tempo otel-collector"
+      WATCHDOG_GRACE_PERIOD_SECONDS: "${WATCHDOG_GRACE_PERIOD_SECONDS:-600}"
+      WATCHDOG_CHECK_INTERVAL_SECONDS: "${WATCHDOG_CHECK_INTERVAL_SECONDS:-30}"
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.1
+    logging: *default-logging
+
   # ---------------------------------------------------------------------
   # `docker compose --profile observability --profile optional-loki up --build`
   # ---------------------------------------------------------------------

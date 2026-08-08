@@ -1,0 +1,67 @@
+# The ONLY two components with a path from outside the cluster:
+# weather-app and grafana, fronted by ONE Ingress / one LoadBalancer -
+# not one LoadBalancer Service each. Evidence for this choice (not just a
+# style preference): running a separate `type: LoadBalancer` Service per
+# app provisions a separate cloud load balancer per app on a real cluster
+# ("can quickly become expensive... especially in microservices
+# environments" - Tetrate), where a single Ingress Controller lets
+# multiple applications "share a single external IP, significantly
+# reducing the number of load balancers required". Host-based routing
+# (not path-based) is used deliberately - it needs zero app-side
+# sub-path configuration (Grafana in particular would otherwise need
+# GF_SERVER_SERVE_FROM_SUB_PATH wired up) and is the same pattern real
+# DNS would use in production (app.example.com / grafana.example.com),
+# unlike a path-prefix hack that only makes sense for a single-domain
+# local demo.
+#
+# Prometheus and Tempo are deliberately NOT here - see k8s/README.md's
+# "Accessing Prometheus's/Tempo's UI without external exposure" section.
+# They stay reachable only via `kubectl port-forward` (or by Grafana as a
+# datasource), which is the evidence-backed choice for occasional
+# operator access at this project's scale - not a compromise.
+#
+# No real DNS on a local cluster: add both hostnames to your hosts file
+# pointing at 127.0.0.1 (Windows: C:\Windows\System32\drivers\etc\hosts;
+# macOS/Linux: /etc/hosts):
+#   127.0.0.1  weatherapp.local grafana.local
+# On a real cluster, point real DNS A/CNAME records at the Ingress
+# controller's external IP/LoadBalancer instead - this Ingress resource
+# doesn't change.
+# TLS deliberately not wired up yet - plain HTTP for now, matching this
+# project's existing "no TLS without a real cert, terminate at a reverse
+# proxy" stance (see the main README's security posture). Add a `tls:`
+# block here (hosts + secretName, provisioned via cert-manager or
+# `kubectl create secret tls`) plus
+# `nginx.ingress.kubernetes.io/ssl-redirect: "true"` when a real
+# certificate exists - don't turn on ssl-redirect before that's true, or
+# every request 301s to a TLS endpoint nothing is serving.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: weatherapp
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: weatherapp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: weather-app
+                port:
+                  name: http
+    - host: grafana.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  name: http

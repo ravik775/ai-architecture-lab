@@ -1,0 +1,74 @@
+# Non-secret settings only - see k8s/secrets.yaml for
+# tokens/keys/passwords. Values are a direct port of .env.example, with
+# service-to-service URLs updated from Docker Compose service names to
+# Kubernetes Service DNS names (identical short names within one
+# namespace, so most URLs didn't actually need to change).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: weather-app-config
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  APP_NAME: "weather-intelligence-agent"
+  ENV: "local"
+  LOG_LEVEL: "INFO"
+  HOST: "0.0.0.0"
+  PORT: "8000"
+
+  DATABASE__URL: "sqlite+aiosqlite:////app/data/weather.db"
+  DATABASE__BUSY_TIMEOUT_MS: "5000"
+  DATABASE__ECHO: "false"
+
+  CACHE__CURRENT_WEATHER_TTL_SECONDS: "30"
+  CACHE__MAX_ENTRIES: "512"
+
+  HTTP_CLIENT__CONNECT_TIMEOUT_SECONDS: "2"
+  HTTP_CLIENT__READ_TIMEOUT_SECONDS: "3"
+  HTTP_CLIENT__WRITE_TIMEOUT_SECONDS: "2"
+  HTTP_CLIENT__POOL_TIMEOUT_SECONDS: "2"
+  HTTP_CLIENT__MAX_CONNECTIONS: "50"
+  HTTP_CLIENT__MAX_KEEPALIVE_CONNECTIONS: "20"
+  HTTP_CLIENT__HTTP2: "true"
+  HTTP_CLIENT__MAX_RETRIES: "2"
+  HTTP_CLIENT__TOTAL_LATENCY_BUDGET_SECONDS: "4"
+
+  WEATHER_PROVIDER__OPEN_METEO_FORECAST_URL: "https://api.open-meteo.com/v1/forecast"
+  WEATHER_PROVIDER__OPEN_METEO_METEOSWISS_URL: "https://api.open-meteo.com/v1/meteoswiss"
+
+  AGENT__LITELLM_BASE_URL: "http://litellm-proxy.weatherapp.svc.cluster.local:4000"
+  AGENT__MODEL_ALIAS: "weather-agent"
+  AGENT__FALLBACK_MODEL_ALIAS: "weather-agent-fallback"
+  AGENT__TEMPERATURE: "0.2"
+  AGENT__MAX_OUTPUT_TOKENS: "800"
+  AGENT__REQUEST_TIMEOUT_SECONDS: "20"
+  AGENT__TOTAL_LATENCY_BUDGET_SECONDS: "25"
+
+  SCHEDULER__ENABLED: "true"
+  SCHEDULER__MISFIRE_GRACE_TIME_SECONDS: "3600"
+  SCHEDULER__BATCH_CONCURRENCY: "5"
+  SCHEDULER__CHECK_INTERVAL_MINUTES: "15"
+  SCHEDULER__MANUAL_TRIGGER_ENABLED: "true"
+
+  SECURITY__ALLOW_DIRECT_COORDINATES: "true"
+  SECURITY__RATE_LIMIT_ENABLED: "true"
+  SECURITY__RATE_LIMIT_REQUESTS_PER_MINUTE: "10"
+  SECURITY__MAX_HISTORY_RANGE_DAYS: "92"
+  SECURITY__MAX_PAGE_SIZE: "100"
+  SECURITY__JWT_ALGORITHM: "HS256"
+  SECURITY__JWT_EXPIRES_MINUTES: "60"
+  SECURITY__FORCE_TRACE_ROLE: "trace_admin"
+
+  OBSERVABILITY__OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.weatherapp.svc.cluster.local:4318"
+  OBSERVABILITY__OTEL_ENABLED: "true"
+  OBSERVABILITY__SERVICE_NAME: "weather-intelligence-agent"
+  OBSERVABILITY__METRICS_EXPORT_INTERVAL_SECONDS: "15"
+  OBSERVABILITY__CONSOLE_EXPORT: "false"
+  OBSERVABILITY__HEALTH_CHECK_SAMPLE_INTERVAL_SECONDS: "300"
+  OBSERVABILITY__METRICS_PORT: "9464"
+  OBSERVABILITY__METRICS_BIND_HOST: "0.0.0.0"
+  OBSERVABILITY__METRICS_SERVER_ENABLED: "true"
+
+  UI__DEBUG_MODE: "false"
+  UI__BATCH_MANUAL_TRIGGER_VISIBLE: "true"

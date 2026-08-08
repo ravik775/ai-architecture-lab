@@ -1,0 +1,15 @@
+# Everything for this app lives in one namespace. Labeled with the
+# Restricted Pod Security Standard (the current, non-deprecated successor
+# to PodSecurityPolicy - see k8s/DECISIONS.md's D7) so every pod in this
+# namespace is enforced non-root, no privilege escalation, all capabilities
+# dropped, unless a specific workload needs a documented exception.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

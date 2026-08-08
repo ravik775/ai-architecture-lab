@@ -1,0 +1,63 @@
+# Verbatim copy of docker/otel-collector-config.yaml. The tail_sampling
+# processor here is exactly why otel-collector is pinned to 1 replica in
+# otel-collector.yaml - it needs every span of a trace to land on the same
+# collector instance to decide correctly. Scaling this past 1 replica
+# without a trace-ID-aware load balancer in front would silently break the
+# "always keep failed-request traces" guarantee.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+          grpc:
+            endpoint: 0.0.0.0:4317
+
+    processors:
+      tail_sampling:
+        decision_wait: 10s
+        policies:
+          - name: errors-always
+            type: status_code
+            status_code:
+              status_codes: [ERROR]
+          - name: force-traced-always
+            type: boolean_attribute
+            boolean_attribute:
+              key: force_traced
+              value: true
+          - name: baseline-probabilistic
+            type: probabilistic
+            probabilistic:
+              sampling_percentage: ${env:OTEL_TAIL_SAMPLING_BASELINE_PERCENT}
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+
+    exporters:
+      debug:
+        verbosity: basic
+      otlp/tempo:
+        endpoint: tempo.weatherapp.svc.cluster.local:4317
+        tls:
+          insecure: true
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [tail_sampling, batch]
+          exporters: [otlp/tempo, debug]

@@ -107,6 +107,19 @@ docker compose --profile observability up --build
 - Grafana: http://localhost:3000 (admin / value of `GF_SECURITY_ADMIN_PASSWORD`, default `admin`)
 - Prometheus: http://localhost:9090
 
+An `observability-watchdog` container also comes up with this profile: it
+polls `weather-app`'s running state and stops grafana/prometheus/tempo/
+otel-collector once `weather-app` has been down for
+`WATCHDOG_GRACE_PERIOD_SECONDS` (default `600` = 10 min) — no point running
+the observability stack for an app that isn't up. It does **not** restart
+anything when `weather-app` comes back; that's still a manual
+`docker compose up`. Verified live: with a 30s test grace period, stopping
+`weather-app` correctly stopped all four dependents ~31s later. Needs the
+Docker socket to call `docker stop` on sibling containers — effectively
+root-equivalent access to the whole Docker daemon, accepted here as a
+local-demo-only trade-off (see `docker/observability-watchdog.sh` and
+[Known limitations](#known-limitations-and-scale-out-path)).
+
 Optional log aggregation:
 
 ```bash
@@ -221,7 +234,7 @@ Invoke-RestMethod http://localhost:8000/health/ready
 uv run pytest tests/ -v
 ```
 
-61 tests: provider mapping/retries (respx-mocked, no real network), cache
+115 tests: provider mapping/retries (respx-mocked, no real network), cache
 hit/miss/coalescing, the low-latency path proven to never invoke the agent,
 location resolution (representative/ambiguous/missing), batch idempotency
 and overlap-prevention, agent tool contracts and structured-output failure
@@ -562,6 +575,12 @@ active for that log line — this is the documented fallback in
   per-session state server-side over a Socket.IO connection; a load
   balancer without sticky sessions would break mid-interaction. Not a
   concern for the intended single-replica local deployment.
+- **`observability-watchdog` has Docker-socket access.** It mounts
+  `/var/run/docker.sock` (read-write, not `:ro` — `docker stop` calls need
+  it) to stop sibling containers, which is effectively root-equivalent
+  access to the whole Docker daemon. Acceptable for a local demo profile;
+  would need a scoped Docker API proxy (e.g. a socket-permission gateway)
+  before this pattern belonged in anything shared.
 - **Metrics/traces are two separate pipelines by design** (Prometheus pull
   for metrics, OTLP push for traces) — see `app/observability/metrics.py`'s
   module docstring for the reasoning. If a unified OTLP metrics pipeline is

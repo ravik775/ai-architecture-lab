@@ -1,0 +1,39 @@
+# Verbatim copy of docker/tempo.yaml - local-disk, single-process mode.
+# This is a hard scaling constraint, not a soft one: Tempo's own docs state
+# a local storage backend cannot be shared across replicas in a
+# distributed deployment (verified against Tempo's storage architecture
+# docs - see k8s/README.md). Do not bump tempo.yaml's replicas past 1
+# without first migrating storage.trace.backend to S3/GCS/Azure Blob.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: weatherapp
+  labels:
+    app.kubernetes.io/part-of: weather-intelligence-agent
+data:
+  tempo.yaml: |
+    stream_over_http_enabled: true
+
+    server:
+      http_listen_port: 3200
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+
+    storage:
+      trace:
+        backend: local
+        wal:
+          path: /var/tempo/wal
+        local:
+          path: /var/tempo/blocks
+
+    usage_report:
+      reporting_enabled: false
