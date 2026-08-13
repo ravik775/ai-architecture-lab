@@ -1,18 +1,21 @@
 spring:
   application:
     name: loan-service
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      timeout: ${REDIS_TIMEOUT:2s}
+  # No spring.data.redis block: loan-service never reads or writes Redis. The
+  # config, the RedisTemplate bean and the starter dependency were all present
+  # but unused, which meant the service opened a connection pool it never used
+  # and failed its health check if Redis was down - a dependency in every
+  # practical sense, on nothing.
 
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://keycloak:8080/realms/loan-platform
+          # See the matching comment in api-gateway's application.yml: keys are
+          # fetched on the internal Docker address, while the iss claim is
+          # validated against the host-facing URL Keycloak stamps into tokens.
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://keycloak:8080/realms/loan-platform/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8090/realms/loan-platform}
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
@@ -20,10 +23,25 @@ spring:
     username: ${RABBITMQ_USERNAME:}
     password: ${RABBITMQ_PASSWORD:}
     timeout: ${RABBITMQ_TIMEOUT:2s}
+    # Lets Micrometer Observation continue the same HTTP-request trace across
+    # the publish/consume boundary, so gateway -> loan-service -> RabbitMQ ->
+    # listener shows up as one trace in Jaeger instead of three disconnected ones.
+    template:
+      observation-enabled: true
+    listener:
+      simple:
+        observation-enabled: true
   ssl:
     bundle:
       pem:
         spiffe:
+          # spiffe-helper rewrites these files when SPIRE rotates the SVID
+          # (roughly halfway through the ~1h TTL). Without reload-on-update the
+          # JVM keeps serving the cert it read at startup and every mTLS
+          # handshake starts failing with certificate_expired once the original
+          # SVID lapses. With it, Spring watches the directory and hot-swaps
+          # Tomcat's SSL context in place - no restart.
+          reload-on-update: true
           keystore:
             certificate: file:/spiffe-certs/svid.pem
             private-key: file:/spiffe-certs/svid_key.pem
@@ -34,14 +52,20 @@ server:
   port: ${LOAN_SERVER_PORT:8080}
   ssl:
     enabled: true
+    # Reference the bundle ONLY. Setting server.ssl.certificate/-private-key/
+    # trust-certificate alongside it builds a second, non-reloadable implicit
+    # bundle and defeats the hot reload above.
     bundle: spiffe
     client-auth: need
-    certificate: /spiffe-certs/svid.pem
-    certificate-private-key: /spiffe-certs/svid_key.pem
-    trust-certificate: /spiffe-certs/bundle.pem
 
 eureka:
   instance:
+    # Stable id so replacing the container updates the existing registration
+    # instead of adding a second one. The default id embeds the container
+    # hostname, so every `docker compose up --force-recreate` left the old,
+    # dead instance registered alongside the new one and the gateway
+    # load-balanced onto a port nothing was listening on.
+    instance-id: ${spring.application.name}
     prefer-ip-address: false
     hostname: ${EUREKA_INSTANCE_HOSTNAME:loan-service}
     non-secure-port-enabled: false
@@ -59,11 +83,19 @@ management:
   endpoints:
     web:
       exposure:
-        include: "*"
+        # Was "*" (env/beans/heapdump/threaddump exposed to any authenticated
+        # caller) - matched to api-gateway's posture instead.
+        include: "health,info,circuitbreakers,prometheus"
   endpoint:
     health:
       probes:
         enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
 
 resilience4j:
   timelimiter:

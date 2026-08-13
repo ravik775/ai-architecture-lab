@@ -43,7 +43,10 @@ public class TenantRateLimiterGlobalFilter implements GlobalFilter, Ordered {
                     exchange.getAttributes().put(TenantFilterFunctions.RESOLVED_TENANT_ATTR, tenantId);
                     return leaseService.consume(tenantId)
                             .flatMap(result -> {
-                                log.info("Tenant={} allowed={} remaining={} retryAfter={}",
+                                // DEBUG: this fires on every request. The rejection
+                                // path below stays at INFO because it is the
+                                // exceptional, actionable case.
+                                log.debug("Tenant={} allowed={} remaining={} retryAfter={}",
                                         tenantId, result.allowed(), result.remaining(), result.retryAfterSeconds());
 
                                 if (!result.allowed()) {

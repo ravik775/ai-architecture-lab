@@ -1,0 +1,67 @@
+### otel-jaeger-demo — manual test requests
+### Works in IntelliJ/VS Code (REST Client extension) — click "Send Request" above each block.
+### Equivalent curl commands are included above each request for terminal use.
+
+@baseUrl = http://localhost:8091
+@jaegerUrl = http://localhost:16686
+
+### Health check
+# curl -s {{baseUrl}}/actuator/health
+GET {{baseUrl}}/actuator/health
+
+
+### Create an order (happy path)
+### Produces one trace: SERVER span -> validate-order -> check-inventory -> CLIENT+SERVER span pair (loopback to InventoryController) -> persist-order
+# curl -s -X POST {{baseUrl}}/api/orders -H "Content-Type: application/json" -d "{\"sku\":\"WIDGET-1\",\"quantity\":3}"
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "sku": "WIDGET-1",
+  "quantity": 3
+}
+
+
+### Create another order with a different SKU/quantity, to get a second distinct trace
+# curl -s -X POST {{baseUrl}}/api/orders -H "Content-Type: application/json" -d "{\"sku\":\"GADGET-9\",\"quantity\":10}"
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "sku": "GADGET-9",
+  "quantity": 10
+}
+
+
+### Error path: quantity <= 0 fails validation
+### The validate-order span is recorded with an exception and ERROR status (shown in red in Jaeger)
+# curl -s -X POST {{baseUrl}}/api/orders/invalid-demo
+POST {{baseUrl}}/api/orders/invalid-demo
+
+
+### Call the "inventory service" endpoint directly (bypasses OrderService, single SERVER span only)
+# curl -s {{baseUrl}}/api/inventory/WIDGET-1
+GET {{baseUrl}}/api/inventory/WIDGET-1
+
+
+###############################################
+### Jaeger query API — inspect traces without the UI
+###############################################
+
+### List every service Jaeger has received spans from
+# curl -s {{jaegerUrl}}/api/services
+GET {{jaegerUrl}}/api/services
+
+
+### Fetch the most recent traces for this app
+# curl -s "{{jaegerUrl}}/api/traces?service=otel-jaeger-demo&limit=5"
+GET {{jaegerUrl}}/api/traces?service=otel-jaeger-demo&limit=5
+
+
+### Fetch only traces containing an error span
+# curl -s "{{jaegerUrl}}/api/traces?service=otel-jaeger-demo&tags=%7B%22error%22%3A%22true%22%7D&limit=5"
+GET {{jaegerUrl}}/api/traces?service=otel-jaeger-demo&tags=%7B%22error%22%3A%22true%22%7D&limit=5
+
+
+### Jaeger UI (open in a browser, not a REST client)
+# open {{jaegerUrl}}

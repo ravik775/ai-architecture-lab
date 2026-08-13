@@ -1,0 +1,223 @@
+### Loan Processing Architecture - end-to-end flow
+#
+# Requires the "loan" Docker Compose profile running:
+#   docker compose --env-file .env.sb --profile loan up -d
+#
+# Two self-contained sections:
+#   SECTION 1 - create a loan and query its status  (runs as alice)
+#   SECTION 2 - approve the loan created by Section 1 (runs as bob)
+#
+# Section 1 stores the new loan's id in the client-global variable
+# {{loanId}}, which survives between runs, so you can run Section 1, inspect
+# the result, and later run Section 2 on its own - it will pick up the same
+# loan. Each section fetches its own fresh tokens (access tokens expire after
+# 5 minutes), so neither section depends on the other having just run.
+#
+# Demo users (see keycloak/realm-export.json):
+#   alice / alice123  -> loan-officer                -> can submit, CANNOT approve
+#   bob   / bob123    -> loan-officer + loan-admin   -> can submit AND approve
+
+@keycloak = http://localhost:8090
+@gateway = http://localhost:8085
+@realm = loan-platform
+@clientId = api-gateway
+@clientSecret = changeit-in-non-dev
+
+
+# =====================================================================
+# SECTION 1 - Create a loan and query its status
+# =====================================================================
+
+### 1.1 Get an access token for alice (loan-officer)
+# Stored as {{aliceToken}} so the next requests reuse it automatically.
+POST {{keycloak}}/realms/{{realm}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id={{clientId}}&client_secret={{clientSecret}}&username=alice&password=alice123
+
+> {%
+    client.test("alice token issued", function() {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+        client.assert(!!response.body.access_token, "no access_token in response");
+    });
+    client.global.set("aliceToken", response.body.access_token);
+%}
+
+
+### 1.2 Alice submits a new loan application
+# Expect: 201 Created, status=PENDING.
+# Captures the generated id into {{loanId}} for Section 2.
+POST {{gateway}}/loan
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "applicantName": "Carol Test",
+  "amount": 15000
+}
+
+> {%
+    client.test("loan created", function() {
+        client.assert(response.status === 201, "expected 201, got " + response.status);
+        client.assert(response.body.status === "PENDING", "expected PENDING, got " + response.body.status);
+        client.assert(!!response.body.id, "no loan id returned");
+    });
+    client.global.set("loanId", response.body.id);
+    client.log("Created loan id: " + response.body.id);
+%}
+
+
+### 1.3 Query the loan's status
+# Expect: 200 OK, still PENDING, tenant taken from alice's JWT (tenant-a).
+GET {{gateway}}/loan/{{loanId}}
+Authorization: Bearer {{aliceToken}}
+
+> {%
+    client.test("loan is readable and pending approval", function() {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+        client.assert(response.body.status === "PENDING", "expected PENDING, got " + response.body.status);
+        client.assert(response.body.tenant === "tenant-a", "expected tenant-a, got " + response.body.tenant);
+        client.assert(response.body.approvedBy === null, "loan should not have an approver yet");
+    });
+%}
+
+
+# =====================================================================
+# SECTION 2 - Approve the loan created in Section 1
+# =====================================================================
+# Uses {{loanId}} captured by Section 1. Run Section 1 at least once first.
+
+### 2.1 Get a fresh access token for alice (loan-officer only)
+# Re-fetched here so Section 2 can run standalone even if Section 1's token
+# has since expired.
+POST {{keycloak}}/realms/{{realm}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id={{clientId}}&client_secret={{clientSecret}}&username=alice&password=alice123
+
+> {%
+    client.test("alice token issued", function() {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+    });
+    client.global.set("aliceToken", response.body.access_token);
+%}
+
+
+### 2.2 Get an access token for bob (loan-officer + loan-admin)
+POST {{keycloak}}/realms/{{realm}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id={{clientId}}&client_secret={{clientSecret}}&username=bob&password=bob123
+
+> {%
+    client.test("bob token issued", function() {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+    });
+    client.global.set("bobToken", response.body.access_token);
+%}
+
+
+### 2.3 Alice tries to approve the loan (forbidden - she lacks loan-admin)
+# Expect: 403 Forbidden. This is the core RBAC assertion the demo exists to
+# prove - holding loan-officer must never be sufficient to approve.
+POST {{gateway}}/loan/{{loanId}}/approve
+Authorization: Bearer {{aliceToken}}
+
+> {%
+    client.test("alice is forbidden from approving", function() {
+        client.assert(response.status === 403, "expected 403, got " + response.status);
+    });
+%}
+
+
+### 2.4 Bob approves the loan (allowed - he has loan-admin)
+# Expect: 200 OK, status flips to APPROVED with bob recorded as the approver.
+POST {{gateway}}/loan/{{loanId}}/approve
+Authorization: Bearer {{bobToken}}
+
+> {%
+    client.test("bob approves successfully", function() {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+        client.assert(response.body.status === "APPROVED", "expected APPROVED, got " + response.body.status);
+        client.assert(!!response.body.approvedBy, "approver was not recorded");
+        client.assert(!!response.body.approvedAt, "approval timestamp was not recorded");
+    });
+%}
+
+
+### 2.5 Confirm the loan is now APPROVED
+GET {{gateway}}/loan/{{loanId}}
+Authorization: Bearer {{bobToken}}
+
+> {%
+    client.test("loan reads back as approved", function() {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+        client.assert(response.body.status === "APPROVED", "expected APPROVED, got " + response.body.status);
+    });
+%}
+
+
+# =====================================================================
+# OPTIONAL - negative-path checks (not part of the two main sections)
+# =====================================================================
+# Run these after Section 2 to exercise error handling and the auth
+# boundary. 3.1 depends on Section 2 having already approved {{loanId}}.
+
+### 3.1 Approving an already-approved loan (conflict)
+# Expect: 409 Conflict - not a silent no-op or a duplicate approval.
+POST {{gateway}}/loan/{{loanId}}/approve
+Authorization: Bearer {{bobToken}}
+
+> {%
+    client.test("re-approving an approved loan is a conflict", function() {
+        client.assert(response.status === 409, "expected 409, got " + response.status);
+    });
+%}
+
+
+### 3.2 Approving an unknown loan id
+# Expect: 404 Not Found.
+POST {{gateway}}/loan/does-not-exist/approve
+Authorization: Bearer {{bobToken}}
+
+> {%
+    client.test("approving an unknown loan id is a 404", function() {
+        client.assert(response.status === 404, "expected 404, got " + response.status);
+    });
+%}
+
+
+### 3.3 Submitting without a token
+# Expect: 401 Unauthorized - rejected at the gateway before routing.
+POST {{gateway}}/loan
+Content-Type: application/json
+
+{
+  "applicantName": "No Token Test",
+  "amount": 100
+}
+
+> {%
+    client.test("submitting without a token is unauthorized", function() {
+        client.assert(response.status === 401, "expected 401, got " + response.status);
+    });
+%}
+
+
+### 3.4 Submitting an invalid body
+# Expect: 400 Bad Request - blank applicantName fails @NotBlank even though
+# alice is properly authorized. Authorization passing does not skip validation.
+POST {{gateway}}/loan
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "applicantName": "",
+  "amount": 15000
+}
+
+> {%
+    client.test("blank applicant name is rejected", function() {
+        client.assert(response.status === 400, "expected 400, got " + response.status);
+    });
+%}

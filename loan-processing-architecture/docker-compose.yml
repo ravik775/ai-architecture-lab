@@ -24,6 +24,7 @@ services:
       - .env.sb
     environment:
       SERVER_PORT: 8085
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "8085:8085"
     depends_on:
@@ -33,6 +34,8 @@ services:
         condition: service_healthy
       api-gateway-spiffe-helper:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     volumes:
       - spire-agent-socket:/tmp/spire-agent/public
       - spiffe-gateway-certs:/spiffe-certs:ro
@@ -54,23 +57,26 @@ services:
       SERVICE: LOAN
       LOAN_SERVER_PORT: 0
       EUREKA_INSTANCE_HOSTNAME: loan-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     volumes:
       - spiffe-loan-certs:/spiffe-certs:ro
     depends_on:
       service-registry:
         condition: service_started
-      redis:
-        condition: service_healthy
+      # No redis dependency: loan-service does not use Redis. Waiting on it only
+      # coupled startup to a service it never talks to.
       rabbitmq:
         condition: service_healthy
       loan-service-spiffe-helper:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     networks:
       - loan-net
 
   redis:
     profiles: [loan]
-    image: redis:7.4-alpine
+    image: redis:7.4.10-alpine
     container_name: redis
     restart: unless-stopped
     env_file:
@@ -106,12 +112,19 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
+      # Each rabbitmq-diagnostics invocation boots a short-lived Erlang CLI
+      # node, which routinely takes several seconds on a loaded machine. Running
+      # two of them under a 5s timeout meant the probe failed while the broker
+      # was demonstrably fine ("fully booted and running"), marking rabbitmq
+      # unhealthy and blocking every dependent container from starting.
+      # One check, with a timeout that reflects what the command actually costs.
       test:
         - CMD-SHELL
-        - rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms
-      interval: 10s
-      timeout: 5s
+        - rabbitmq-diagnostics -q check_running
+      interval: 15s
+      timeout: 20s
       retries: 5
+      start_period: 30s
     networks:
       - loan-net
 
@@ -243,22 +256,63 @@ services:
     networks:
       - loan-net
 
+  jaeger:
+    profiles: [ loan ]
+    image: jaegertracing/jaeger:2.5.0
+    container_name: jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    networks:
+      - loan-net
+
   keycloak:
     profiles: [ loan ]
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.7.1
     command: [ "start-dev", "--import-realm" ]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set in .env.sb}
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
+      # Health checks are disabled by default in the Keycloak Quarkus
+      # distribution. Without this, the healthcheck below (GET /health/ready)
+      # can never succeed - the container is marked unhealthy forever
+      # regardless of whether Keycloak is actually working, a false negative
+      # discovered by actually running the stack rather than just reading it.
+      KC_HEALTH_ENABLED: "true"
+      # Pin the issuer URL so the "iss" claim is identical no matter how the
+      # token was obtained - from the host via localhost:8090 (IntelliJ .http,
+      # Postman, curl) or from inside the Docker network via keycloak:8080.
+      # Without this, Keycloak derives "iss" from the request's Host header
+      # and host-issued tokens are rejected by the services with
+      # "The iss claim is not valid". Services fetch signing keys separately
+      # via jwk-set-uri, which stays on the internal address.
+      KC_HOSTNAME: http://localhost:8090
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - keycloak-data:/opt/keycloak/data
     ports:
       - "8090:8080"
     healthcheck:
-      test: [ "CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\n\r\n' >&3 && cat <&3 | grep -q 'UP'" ]
+      # Port 9000, not 8080: enabling KC_HEALTH_ENABLED moves health/metrics
+      # to Keycloak's separate management interface rather than the main
+      # HTTP port. Verified directly - hitting :8080/health/ready returns
+      # 404 ("Unable to find matching target resource method"); :9000 returns
+      # a real 200 with {"status":"UP"}.
+      #
+      # "Connection: close" is required too, not optional - Keycloak's HTTP
+      # server keeps the socket open by default (HTTP/1.1 keep-alive), so
+      # without it `cat <&3` blocks waiting for EOF that never comes until
+      # the 3s timeout kills the check. That timeout is indistinguishable
+      # from a real failure, so this healthcheck could never pass regardless
+      # of the app's actual state - confirmed by reproducing the hang
+      # directly before adding this header fixed it.
+      test: [ "CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q 'UP'" ]
       interval: 5s
       timeout: 3s
       retries: 30

@@ -1,0 +1,15 @@
+# Note: this repo's sibling project (../loan-processing-architecture) already runs a
+# Jaeger container with its OTLP/HTTP receiver published on host port 4318 and its UI on
+# 16686. Rather than fight that port binding with a second Jaeger container, this compose
+# file only runs the demo app and points it at whichever Jaeger is listening on the host.
+# If you don't have one running, start a standalone one first — see README.md.
+services:
+  app:
+    build: .
+    container_name: otel-jaeger-demo
+    ports:
+      - "8091:8091"
+    environment:
+      - OTEL_EXPORTER_ENDPOINT=http://host.docker.internal:4318/v1/traces
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

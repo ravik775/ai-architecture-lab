@@ -1,0 +1,28 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: otel-jaeger-demo
+
+management:
+  tracing:
+    sampling:
+      # Sample every request. A real system would use a lower probability (e.g. 0.1) so
+      # tracing overhead and Jaeger storage stay bounded under production traffic.
+      probability: 1.0
+  otlp:
+    tracing:
+      # Jaeger's built-in OTLP/HTTP receiver. Overridden to http://jaeger:4318/v1/traces
+      # when running via docker-compose (see docker-compose.yml).
+      endpoint: ${OTEL_EXPORTER_ENDPOINT:http://localhost:4318/v1/traces}
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    # Stitches trace/span IDs into every log line so a log statement can be correlated
+    # back to the exact span that produced it inside Jaeger.
+    level: "%5p [${spring.application.name},%X{traceId:-},%X{spanId:-}]"

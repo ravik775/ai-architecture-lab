@@ -37,6 +37,34 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: ${REDIS_TIMEOUT:2s}
+  ssl:
+    bundle:
+      pem:
+        spiffe:
+          # Client-side SVID for gateway -> loan-service mTLS. reload-on-update
+          # makes Spring watch /spiffe-certs and fire bundle update handlers
+          # when spiffe-helper rotates the SVID; GatewayMtlsHttpClientConfig
+          # registers a handler that swaps the key/trust manager delegates so
+          # the next handshake uses the new cert without a restart.
+          reload-on-update: true
+          keystore:
+            certificate: file:/spiffe-certs/svid.pem
+            private-key: file:/spiffe-certs/svid_key.pem
+          truststore:
+            certificate: file:/spiffe-certs/bundle.pem
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Signing keys are fetched over the internal Docker network - a
+          # container cannot resolve "localhost:8090". The iss claim, however,
+          # is validated against the host-facing URL that Keycloak stamps into
+          # every token (see KC_HOSTNAME in docker-compose.yml). Splitting
+          # these two is what lets a token obtained from the host
+          # (IntelliJ .http / Postman / curl on localhost:8090) be accepted by
+          # a service running inside Docker.
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://keycloak:8080/realms/loan-platform/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8090/realms/loan-platform}
 server:
   port: 8085
 
@@ -44,23 +72,50 @@ local:
   ratelimiter:
     leaseSize: 2
 eureka:
+  instance:
+    # See loan-service's application.yml - stable id so a recreated container
+    # replaces its registration rather than duplicating it.
+    instance-id: ${spring.application.name}
   client:
     register-with-eureka: true
     fetch-registry: true
     service-url:
       defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://service-registry:8086/eureka/}
 management:
-  server:
-    port: 9090
+  # No separate management port. A distinct management port spins up its own
+  # WebServer with its own context, which the SecurityWebFilterChain declared in
+  # SecurityConfig does NOT apply to - so /actuator/prometheus and
+  # /actuator/circuitbreakers were served with no authentication at all, while
+  # the permitAll rule for health/info pointed at port 8085 where actuator was
+  # not even listening. Serving actuator on the main port puts every endpoint
+  # back under that chain: health/info stay public, everything else requires a
+  # valid JWT. No gateway route matches /actuator/**, so these are handled
+  # locally and never proxied downstream.
   endpoints:
     web:
       exposure:
-        include: "health,info,circuitbreakers"
+        include: "health,info,circuitbreakers,prometheus"
   endpoint:
     health:
       probes:
         enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
 resilience4j:
+  timelimiter:
+    configs:
+      default:
+        # Spring Cloud CircuitBreaker's default TimeLimiter is 1s, which the
+        # very first request could not meet: it pays JVM/Tomcat warm-up on
+        # loan-service plus the SPIFFE mTLS handshake. The breaker tripped and
+        # served the fallback, so the first call of every session failed while
+        # a retry succeeded. 5s absorbs cold start; tune per-route for real
+        # workloads rather than leaving a blanket value this generous.
+        timeoutDuration: 5s
   circuitbreaker:
     configs:
       default:
@@ -69,28 +124,24 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 5
-      externalApi:
-        slidingWindowSize: 10
-        failureRateThreshold: 30
-        waitDurationInOpenState: 5s
     instances:
+      # Only loanCircuitBreaker exists - it is the one referenced by the
+      # loan-service route above. paymentCircuitBreaker/customerCircuitBreaker
+      # (and the "externalApi" config they used) were removed: nothing in this
+      # service referenced them, so they were config that looked like coverage
+      # without providing any.
       loanCircuitBreaker:
-        baseConfig: default
-      paymentCircuitBreaker:
-        baseConfig: externalApi
-        slidingWindowSize: 10
-      customerCircuitBreaker:
         baseConfig: default
 logging:
   level:
-    reactor.netty.http.client: DEBUG
-    reactor.netty.transport: DEBUG
-    org.springframework.cloud.gateway: TRACE
-    org.springframework.cloud.loadbalancer: TRACE
-    org.springframework.cloud.gateway.filter.ReactiveLoadBalancerClientFilter: TRACE
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://keycloak:8080/realms/loan-platform
+    # These were DEBUG/TRACE, which emitted tens of lines per request (full
+    # filter-chain dumps, every Netty connection event, the whole Authorization
+    # header). Useful when tracing a routing problem, far too expensive to leave
+    # on: it dominates log volume and writes bearer tokens to disk.
+    # Re-enable selectively while debugging, e.g.
+    #   LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_CLOUD_GATEWAY=TRACE
+    reactor.netty.http.client: INFO
+    reactor.netty.transport: INFO
+    org.springframework.cloud.gateway: INFO
+    org.springframework.cloud.loadbalancer: INFO
+    org.ex.apigateway: INFO

@@ -53,13 +53,17 @@ public class LettuceConfig {
             builder.withTimeout(redisProperties.getTimeout());
         }
 
-        // Redis ACL (Redis 6+)
+        // Redis ACL (Redis 6+). Password is optional here - an ACL user can be
+        // configured "nopass" - so getPassword() must be null-guarded rather
+        // than dereferenced directly, or a username-without-password config
+        // NPEs on toCharArray() instead of connecting as that user.
         if (redisProperties.getUsername() != null &&
                 !redisProperties.getUsername().isBlank()) {
 
-            builder.withAuthentication(
-                    redisProperties.getUsername(),
-                    redisProperties.getPassword().toCharArray());
+            char[] password = redisProperties.getPassword() != null
+                    ? redisProperties.getPassword().toCharArray()
+                    : new char[0];
+            builder.withAuthentication(redisProperties.getUsername(), password);
         }
         // Legacy password only
         else if (redisProperties.getPassword() != null) {

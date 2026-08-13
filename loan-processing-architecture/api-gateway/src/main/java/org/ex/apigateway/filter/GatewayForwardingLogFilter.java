@@ -32,7 +32,10 @@ public class GatewayForwardingLogFilter implements GlobalFilter, Ordered {
         URI targetUri = exchange.getAttribute(GATEWAY_REQUEST_URL_ATTR);
         Set<URI> originalUris = exchange.getAttribute(GATEWAY_ORIGINAL_REQUEST_URL_ATTR);
 
-        log.info(
+        // Per-request routing detail is DEBUG: at INFO it produced two lines for
+        // every single request, which is cost and noise rather than signal.
+        // Failures below stay at ERROR.
+        log.debug(
                 "Gateway forwarding request: method={}, incomingUri={}, routeId={}, routeUri={}, resolvedTargetUri={}, originalUris={}",
                 exchange.getRequest().getMethod(),
                 exchange.getRequest().getURI(),
@@ -43,7 +46,7 @@ public class GatewayForwardingLogFilter implements GlobalFilter, Ordered {
         );
 
         return chain.filter(exchange)
-                .doOnSuccess(unused -> log.info(
+                .doOnSuccess(unused -> log.debug(
                         "Gateway response: targetUri={}, status={}",
                         targetUri,
                         exchange.getResponse().getStatusCode()
