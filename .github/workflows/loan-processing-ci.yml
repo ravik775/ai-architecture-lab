@@ -83,6 +83,14 @@ jobs:
           # every run.
           cmd_options: "-I"
           fail_action: false
+          # Default behavior files/updates a GitHub issue with the report on
+          # every run - that needs `issues: write` (this repo's default
+          # GITHUB_TOKEN doesn't have it, which is what actually failed the
+          # job: "Resource not accessible by integration"), and would also
+          # spam a new issue on every single push regardless. Neither is
+          # wanted here - the job's own pass/fail plus its log is already
+          # the record.
+          allow_issue_writing: false
       - name: Tear down
         if: always()
         working-directory: loan-processing-architecture
