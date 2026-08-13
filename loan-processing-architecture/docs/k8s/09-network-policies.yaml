@@ -1,0 +1,114 @@
+# Default-deny ingress, then explicit allows matching the actual traffic
+# graph - the original manifests had no NetworkPolicy at all, so every pod
+# could reach every other pod regardless of whether it had any reason to.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: loan
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# api-gateway is the only entrypoint external traffic should reach.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-api-gateway
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: api-gateway } }
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8085, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-loan-service
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: loan-service } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: api-gateway } } }]
+      ports: [{ port: 8080, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-redis
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: api-gateway } } }]
+      ports: [{ port: 6379, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-rabbitmq
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: rabbitmq } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: loan-service } } }]
+      ports: [{ port: 5672, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-service-registry
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: service-registry } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: api-gateway } }
+        - podSelector: { matchLabels: { app: loan-service } }
+      ports: [{ port: 8086, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-keycloak
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: keycloak } }
+  policyTypes: [Ingress]
+  ingress:
+    # Both apps fetch JWKS; test clients (port-forward) also need the main
+    # port for the login/token endpoints - not scoped to a podSelector
+    # since that traffic legitimately originates outside the cluster.
+    - ports:
+        - { port: 8080, protocol: TCP }
+        - { port: 9000, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-spire-server
+  namespace: loan
+spec:
+  podSelector: { matchLabels: { app: spire-server } }
+  policyTypes: [Ingress]
+  ingress:
+    # spire-agent runs with hostNetwork: true, so it isn't matched by a
+    # podSelector the way normal pods are - this allows from anywhere on
+    # port 8081 within the namespace's policy scope rather than leaving
+    # the node-network agent unable to reach it at all.
+    - ports: [{ port: 8081, protocol: TCP }]
+
+# Deliberately no default-deny on egress in this pass: only ingress is
+# restricted above. Egress restriction is the natural next step (each
+# workload's outbound traffic is just as mappable as its inbound - api-gateway
+# to loan-service/redis/keycloak/service-registry, loan-service to
+# rabbitmq/keycloak/service-registry, everything to DNS) but doing it
+# correctly means enumerating every legitimate outbound path first or
+# risking a silent, hard-to-diagnose breakage (DNS resolution failing is
+# the classic case). Left as a scoped follow-up rather than rushed here,
+# consistent with not adding a policy whose correctness wasn't verified.

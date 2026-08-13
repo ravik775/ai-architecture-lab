@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loan-service
+  namespace: loan
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: loan-service } }
+  template:
+    metadata: { labels: { app: loan-service } }
+    spec:
+      serviceAccountName: loan-service
+      initContainers:
+        - name: spiffe-helper
+          image: loan-service-spiffe-helper:local
+          imagePullPolicy: IfNotPresent
+          restartPolicy: Always
+          volumeMounts:
+            - name: agent-socket
+              mountPath: /tmp/spire-agent/public
+            - name: spiffe-certs
+              mountPath: /spiffe-certs
+          startupProbe:
+            exec: { command: ["test", "-s", "/spiffe-certs/svid.pem"] }
+            periodSeconds: 2
+            failureThreshold: 60
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+      containers:
+        - name: loan-service
+          image: loan-service:local
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8080 }]
+          env:
+            - name: SERVICE
+              value: LOAN
+            # Fixed, unlike Docker Compose's LOAN_SERVER_PORT=0 (OS-assigned
+            # ephemeral port, discoverable only via Eureka's registered
+            # secure-port). A k8s Service needs a stable targetPort, and
+            # gateway routing here goes through Eureka anyway (lb://LOAN-SERVICE),
+            # not a hardcoded host:port, so fixing this doesn't change how
+            # traffic actually gets routed - only makes the Service/probe
+            # well-defined.
+            - { name: LOAN_SERVER_PORT, value: "8080" }
+            - { name: EUREKA_INSTANCE_HOSTNAME, value: "loan-service" }
+            - { name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE, value: "http://service-registry:8086/eureka/" }
+            - { name: RABBITMQ_HOST, value: "rabbitmq" }
+            - { name: RABBITMQ_PORT, value: "5672" }
+            - name: RABBITMQ_USERNAME
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: RABBITMQ_DEFAULT_USER } }
+            - name: RABBITMQ_PASSWORD
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: RABBITMQ_DEFAULT_PASS } }
+          volumeMounts:
+            - name: spiffe-certs
+              mountPath: /spiffe-certs
+              readOnly: true
+          readinessProbe:
+            # HTTPS, client-auth required (server.ssl.client-auth: need) -
+            # a plain httpGet probe would itself need a client cert and
+            # fail the TLS handshake before it ever sees a status code.
+            # The port being open (which a socket probe verifies) is the
+            # right-shaped check for a probe that will never present a
+            # client certificate.
+            tcpSocket: { port: 8080 }
+            initialDelaySeconds: 25
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits: { cpu: 750m, memory: 640Mi }
+      volumes:
+        - name: agent-socket
+          hostPath:
+            path: /run/spire/agent-sockets
+            type: Directory
+        - name: spiffe-certs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loan-service
+  namespace: loan
+spec:
+  selector: { app: loan-service }
+  ports: [{ port: 8080, targetPort: 8080 }]

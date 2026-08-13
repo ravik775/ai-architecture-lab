@@ -1,0 +1,291 @@
+# SPIRE server for Kubernetes, using k8s_psat node attestation instead of
+# the join_token approach Docker Compose uses. On k8s this is strictly
+# simpler: agents prove their identity with their own Kubernetes-issued
+# token (verified via the TokenReview API), so there is no join-token
+# minting/distribution dance - the entire spire-bootstrap container from
+# Docker Compose has no k8s equivalent because the problem it solved
+# doesn't exist here.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-server-auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: loan
+roleRef:
+  kind: ClusterRole
+  name: system:auth-delegator
+  apiGroup: rbac.authorization.k8s.io
+---
+# k8s_psat's server-side plugin does more than validate the PSAT via
+# TokenReview (covered by auth-delegator above) - it also reads the Pod
+# object the token belongs to, to confirm the claimed namespace/service
+# account match. Missing this produces a real, specific error, found by
+# actually running it: "pods ... is forbidden ... cannot get resource
+# pods ... " - not a guess, the exact RBAC gap the crash log named.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-server-pod-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-server-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: loan
+roleRef:
+  kind: ClusterRole
+  name: spire-server-pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-server-config
+  namespace: loan
+data:
+  server.conf: |
+    server {
+      bind_address = "0.0.0.0"
+      bind_port = "8081"
+      trust_domain = "example.org"
+      data_dir = "/opt/spire/data/server"
+      log_level = "INFO"
+      ca_ttl = "168h"
+      default_x509_svid_ttl = "1h"
+    }
+
+    plugins {
+      DataStore "sql" {
+        plugin_data {
+          database_type = "sqlite3"
+          connection_string = "/opt/spire/data/server/datastore.sqlite3"
+        }
+      }
+
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          clusters = {
+            "docker-desktop" = {
+              service_account_allow_list = ["loan:spire-agent"]
+            }
+          }
+        }
+      }
+
+      KeyManager "disk" {
+        plugin_data {
+          keys_path = "/opt/spire/data/server/keys.json"
+        }
+      }
+    }
+---
+# Registers the two workload entries once the server API socket is up, then
+# sleeps forever (a Deployment container must not exit, unlike Docker
+# Compose's one-shot spire-bootstrap). Runs as a second container in the
+# same Pod so it can share the admin socket via a plain emptyDir - the
+# same "separate process, shared volume" shape as Docker Compose's
+# spire-server/spire-bootstrap pair, just co-located in one Pod because
+# emptyDir volumes are Pod-scoped, not cluster-scoped.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-server-registrar-script
+  namespace: loan
+data:
+  register.sh: |
+    #!/bin/bash
+    set -eu
+    SOCKET_PATH="/tmp/spire-server/private/api.sock"
+    BIN="/opt/spire/bin/spire-server"
+    TRUST_DOMAIN="example.org"
+    CALL_TIMEOUT=20   # per spire-server CLI call
+    MAX_WAIT_ATTEMPTS=60   # x 2s sleep = 2 minutes per wait loop
+
+    # A previous version of this script used bare `until ...; do sleep 2;
+    # done` loops with no bound. One genuinely hung this way in testing (a
+    # single stuck `entry create` call, cause never fully isolated) and,
+    # because the script never exited, Kubernetes had no signal anything was
+    # wrong - the container just sat there "Running" while everything
+    # downstream (the agent, both apps' spiffe-helper sidecars) waited on a
+    # registration that was never coming. Every wait and every CLI call
+    # below is now bounded: on timeout the script exits non-zero, the pod's
+    # default restartPolicy restarts just this container, and it starts
+    # clean rather than staying silently stuck. Restarting is the correct
+    # recovery here specifically because create_or_update (below) is
+    # idempotent - a retry after a partial run is safe, not just tolerated.
+    run() {
+      timeout "$CALL_TIMEOUT" "$@"
+    }
+
+    wait_for() {
+      description="$1"; shift
+      attempt=0
+      until "$@"; do
+        attempt=$((attempt + 1))
+        if [ "$attempt" -ge "$MAX_WAIT_ATTEMPTS" ]; then
+          echo "[registrar] TIMEOUT after ${MAX_WAIT_ATTEMPTS} attempts waiting for: ${description}" >&2
+          exit 1
+        fi
+        sleep 2
+      done
+    }
+
+    echo "[registrar] Waiting for spire-server admin API..."
+    wait_for "spire-server admin API" run "$BIN" entry show -socketPath "$SOCKET_PATH"
+    echo "[registrar] spire-server is ready."
+
+    # Unlike join_token (where the admin picks the agent's SPIFFE ID up
+    # front when minting the token), a k8s_psat-attested agent's SPIFFE ID
+    # is derived by SPIRE itself and includes the Kubernetes Node object's
+    # UID - not knowable ahead of time. Workload entries need this as their
+    # -parentID, so wait for the agent to actually attest, then read its
+    # real ID back from the server rather than guessing it.
+    echo "[registrar] Waiting for at least one attested agent..."
+    find_agent_id() {
+      AGENT_ID=$(run "$BIN" agent list -socketPath "$SOCKET_PATH" 2>/dev/null | grep "SPIFFE ID" | head -1 | grep -oE 'spiffe://[^ ]+' || true)
+      [ -n "$AGENT_ID" ]
+    }
+    AGENT_ID=""
+    wait_for "an attested agent" find_agent_id
+    echo "[registrar] Found attested agent: ${AGENT_ID}"
+
+    create_or_update() {
+      workload="$1"
+      spiffe_id="spiffe://${TRUST_DOMAIN}/ns/loan/sa/${workload}"
+      # Delete-then-recreate rather than skip-if-exists: this script's own
+      # entry spec has already changed once (missing -dns, below) after an
+      # earlier run had created entries without it. A registrar that skips
+      # existing entries can silently keep serving a stale spec forever;
+      # deleting first makes it self-correcting on every restart instead.
+      existing=$(run "$BIN" entry show -socketPath "$SOCKET_PATH" -spiffeID "$spiffe_id" 2>/dev/null | awk '/Entry ID/ { print $4 }' || true)
+      for id in $existing; do
+        echo "[registrar] Deleting stale entry ${id} for ${spiffe_id}..."
+        run "$BIN" entry delete -socketPath "$SOCKET_PATH" -entryID "$id"
+      done
+      echo "[registrar] Creating entry for ${spiffe_id}..."
+      # -dns matters, not cosmetic: Docker Compose's bootstrap.sh passes
+      # this too (confirmed by reading it directly). Without a DNS SAN
+      # matching the k8s Service name, the issued X.509 SVID has only a
+      # SPIFFE URI SAN, and standard TLS hostname verification - which
+      # ReloadableX509TrustManager relies on - rejects it with exactly
+      # "certificate_unknown: No name matching loan-service found". Found
+      # by reproducing the handshake failure, not by re-reading the diff
+      # against Compose ahead of time.
+      run "$BIN" entry create \
+        -socketPath "$SOCKET_PATH" \
+        -spiffeID "$spiffe_id" \
+        -parentID "$AGENT_ID" \
+        -selector "k8s:ns:loan" \
+        -selector "k8s:sa:${workload}" \
+        -dns "${workload}"
+    }
+
+    create_or_update "loan-service"
+    create_or_update "api-gateway"
+
+    echo "[registrar] Done. Current entries:"
+    "$BIN" entry show -socketPath "$SOCKET_PATH"
+
+    # Keep the container alive (this is a Deployment, not a one-shot Job) so
+    # `kubectl logs` stays inspectable and the Pod doesn't churn restarts.
+    tail -f /dev/null
+---
+# Persistent, not emptyDir: this is the actual root cause behind the
+# repeated "certificate signed by unknown authority" failures hit while
+# building this deployment. Docker Compose's spire-server-data is a real
+# named volume that survives container restarts (the CA it holds is
+# generated once, not regenerated every time). The first k8s translation
+# used emptyDir for this "for simplicity" and missed that Compose's own
+# reference design already made the opposite, more correct choice - every
+# spire-server restart minted a brand-new CA, invalidating every agent and
+# every workload SVID issued before it, which is what forced a manual
+# cascade of agent-then-app restarts after any server change. A PVC
+# (Docker Desktop's k8s ships a default "hostpath" StorageClass, so this
+# provisions automatically) removes the need for that cascade entirely,
+# rather than requiring it to be remembered and done correctly every time.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spire-server-data
+  namespace: loan
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spire-server
+  namespace: loan
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: spire-server }
+  template:
+    metadata:
+      labels: { app: spire-server }
+    spec:
+      serviceAccountName: spire-server
+      containers:
+        - name: spire-server
+          image: ghcr.io/spiffe/spire-server:1.9.6
+          args: ["-config", "/opt/spire/conf/server/server.conf"]
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: config
+              mountPath: /opt/spire/conf/server
+            - name: data
+              mountPath: /opt/spire/data/server
+            - name: admin-socket
+              mountPath: /tmp/spire-server/private
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+        - name: registrar
+          # The upstream spire-server image has no shell at all - built for
+          # scratch/distroless. spire-server-registrar:local (built from
+          # ./spire-server-registrar/Dockerfile, same multi-stage pattern
+          # already used by spire/bootstrap and spire/agent-wrapper for
+          # Docker Compose) adds bash on top of the same binary.
+          image: spire-server-registrar:local
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/scripts/register.sh"]
+          volumeMounts:
+            - name: admin-socket
+              mountPath: /tmp/spire-server/private
+            - name: registrar-script
+              mountPath: /scripts
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+      volumes:
+        - name: config
+          configMap: { name: spire-server-config }
+        - name: registrar-script
+          configMap: { name: spire-server-registrar-script, defaultMode: 0755 }
+        - name: data
+          persistentVolumeClaim: { claimName: spire-server-data }
+        - name: admin-socket
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server
+  namespace: loan
+spec:
+  selector: { app: spire-server }
+  ports:
+    - port: 8081
+      targetPort: 8081

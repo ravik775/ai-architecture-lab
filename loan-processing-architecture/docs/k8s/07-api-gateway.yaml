@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: loan
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api-gateway } }
+  template:
+    metadata: { labels: { app: api-gateway } }
+    spec:
+      # This ServiceAccount's name ("api-gateway", in namespace "loan") IS
+      # this workload's identity - it's exactly what the SPIRE registration
+      # entry's k8s:sa selector matches against (see 02-spire-server.yaml).
+      serviceAccountName: api-gateway
+      initContainers:
+        # Native sidecar (KEP-753, GA since k8s 1.29): restartPolicy Always
+        # makes the kubelet start this before, and keep it running
+        # alongside, the main container - but critically, the startupProbe
+        # below makes the kubelet WAIT for a real SVID file to exist before
+        # starting api-gateway at all. Without that gate, Spring Boot's SSL
+        # bundle loads at startup and crashes immediately if the cert isn't
+        # there yet - exactly the failure this whole exercise started from.
+        - name: spiffe-helper
+          image: api-gateway-spiffe-helper:local
+          imagePullPolicy: IfNotPresent
+          restartPolicy: Always
+          volumeMounts:
+            - name: agent-socket
+              mountPath: /tmp/spire-agent/public
+            - name: spiffe-certs
+              mountPath: /spiffe-certs
+          startupProbe:
+            exec: { command: ["test", "-s", "/spiffe-certs/svid.pem"] }
+            periodSeconds: 2
+            failureThreshold: 60
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+      containers:
+        - name: api-gateway
+          image: api-gateway:local
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8085 }]
+          env:
+            - { name: SERVER_PORT, value: "8085" }
+            - { name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE, value: "http://service-registry:8086/eureka/" }
+            - { name: REDIS_HOST, value: "redis" }
+            - { name: REDIS_PORT, value: "6379" }
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: redis-credentials, key: REDIS_PASSWORD } }
+          volumeMounts:
+            - name: spiffe-certs
+              mountPath: /spiffe-certs
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8085 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits: { cpu: 750m, memory: 640Mi }
+      volumes:
+        - name: agent-socket
+          # Same hostPath the spire-agent DaemonSet publishes its socket
+          # to - this is how a Pod on this node reaches the local agent.
+          hostPath:
+            path: /run/spire/agent-sockets
+            type: Directory
+        - name: spiffe-certs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: loan
+spec:
+  selector: { app: api-gateway }
+  ports: [{ port: 8085, targetPort: 8085 }]

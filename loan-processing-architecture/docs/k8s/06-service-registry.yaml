@@ -1,0 +1,40 @@
+# No SPIFFE/mTLS here - service-registry only speaks Eureka's own
+# discovery protocol and doesn't carry secrets or handle client mTLS,
+# consistent with Docker Compose's treatment of it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-registry
+  namespace: loan
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: service-registry } }
+  template:
+    metadata: { labels: { app: service-registry } }
+    spec:
+      serviceAccountName: service-registry
+      automountServiceAccountToken: false
+      containers:
+        - name: service-registry
+          image: service-registry:local
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8086 }]
+          readinessProbe:
+            # 8086, matching server.port in application.properties - the
+            # original manifest probed 8761 (Eureka's traditional default
+            # port), which this app never listens on.
+            httpGet: { path: /actuator/health, port: 8086 }
+            initialDelaySeconds: 25
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-registry
+  namespace: loan
+spec:
+  selector: { app: service-registry }
+  ports: [{ port: 8086, targetPort: 8086 }]

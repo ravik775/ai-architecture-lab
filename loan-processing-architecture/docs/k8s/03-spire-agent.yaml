@@ -1,0 +1,140 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-agent
+rules:
+  # WorkloadAttestor "k8s" needs to read pods on its own node to map a
+  # calling PID back to (namespace, service account, labels); "nodes" and
+  # "nodes/proxy" are needed to reach the kubelet API for that lookup.
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "nodes/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-agent
+subjects:
+  - kind: ServiceAccount
+    name: spire-agent
+    namespace: loan
+roleRef:
+  kind: ClusterRole
+  name: spire-agent
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-agent-config
+  namespace: loan
+data:
+  agent.conf: |
+    agent {
+      data_dir = "/opt/spire/data/agent"
+      log_level = "INFO"
+      server_address = "spire-server"
+      server_port = "8081"
+      trust_domain = "example.org"
+      socket_path = "/tmp/spire-agent/public/api.sock"
+      # No pre-shared trust bundle is injected here, same simplification
+      # Docker Compose makes - acceptable because the spire-server Service
+      # is only reachable inside the cluster network, never externally.
+      insecure_bootstrap = true
+    }
+
+    plugins {
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          cluster = "docker-desktop"
+        }
+      }
+
+      KeyManager "memory" {
+        plugin_data {}
+      }
+
+      WorkloadAttestor "k8s" {
+        plugin_data {
+          # Local single-node demo cluster - skips kubelet TLS verification
+          # rather than provisioning a kubelet CA bundle. Revisit before any
+          # multi-node or non-local deployment.
+          skip_kubelet_verification = true
+        }
+      }
+    }
+---
+# See 02-spire-server.yaml for the full story: spire-server now has
+# persistent storage for its CA too, which is the actual fix - this PVC
+# just needs to outlive individual agent container/pod restarts so the
+# agent's own cached bundle can't go stale relative to a server that no
+# longer restarts on every routine change either. A DaemonSet can't use a
+# volumeClaimTemplate the way a StatefulSet can, but this cluster is
+# explicitly single-node, so one PVC referenced directly by the pod
+# template is the correct, simplest fit - not a workaround.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spire-agent-data
+  namespace: loan
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 64Mi }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: spire-agent
+  namespace: loan
+spec:
+  selector:
+    matchLabels: { app: spire-agent }
+  template:
+    metadata:
+      labels: { app: spire-agent }
+    spec:
+      serviceAccountName: spire-agent
+      hostPID: true
+      # hostNetwork so the agent reaches its own node's kubelet at
+      # 127.0.0.1:10250 for workload attestation, matching the standard
+      # SPIRE-on-k8s agent pattern.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: spire-agent
+          image: ghcr.io/spiffe/spire-agent:1.9.6
+          args: ["-config", "/opt/spire/conf/agent/agent.conf"]
+          volumeMounts:
+            - name: config
+              mountPath: /opt/spire/conf/agent
+            - name: data
+              mountPath: /opt/spire/data/agent
+            - name: agent-socket
+              mountPath: /tmp/spire-agent/public
+            - name: spire-token
+              mountPath: /var/run/secrets/tokens
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+      volumes:
+        - name: config
+          configMap: { name: spire-agent-config }
+        - name: data
+          persistentVolumeClaim: { claimName: spire-agent-data }
+        - name: agent-socket
+          # hostPath, not emptyDir: workload pods on this node (api-gateway,
+          # loan-service) need to reach this same socket from their own
+          # separate Pods via a matching hostPath mount - the k8s
+          # equivalent of the named Docker volume Compose shares between
+          # spire-agent and each *-spiffe-helper container.
+          hostPath:
+            path: /run/spire/agent-sockets
+            type: DirectoryOrCreate
+        - name: spire-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: spire-agent
+                  expirationSeconds: 7200
+                  audience: spire-server

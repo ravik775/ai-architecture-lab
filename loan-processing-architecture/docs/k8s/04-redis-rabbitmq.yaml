@@ -1,0 +1,85 @@
+# Images pinned to the exact same patch versions as docker-compose.yml
+# (redis:7.4.10-alpine fixes two RCE-class CVEs; rabbitmq:4-management is
+# a deliberately-deferred floating tag on Compose too, per the same
+# accepted-risk call recorded in the security review, not a k8s-specific
+# gap). Credentials come from Secrets, not hardcoded or absent - the
+# original manifests had no auth configured for either service at all.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: loan
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      serviceAccountName: redis
+      automountServiceAccountToken: false
+      containers:
+        - name: redis
+          image: redis:7.4.10-alpine
+          command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$REDIS_PASSWORD\""]
+          ports: [{ containerPort: 6379 }]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: redis-credentials, key: REDIS_PASSWORD } }
+          readinessProbe:
+            exec: { command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: loan
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379, targetPort: 6379 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: loan
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: rabbitmq } }
+  template:
+    metadata: { labels: { app: rabbitmq } }
+    spec:
+      serviceAccountName: rabbitmq
+      automountServiceAccountToken: false
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4-management
+          ports: [{ containerPort: 5672 }, { containerPort: 15672 }]
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: RABBITMQ_DEFAULT_USER } }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: RABBITMQ_DEFAULT_PASS } }
+          readinessProbe:
+            exec: { command: ["rabbitmq-diagnostics", "-q", "check_running"] }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: loan
+spec:
+  selector: { app: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672, targetPort: 5672 }
+    - { name: ui, port: 15672, targetPort: 15672 }

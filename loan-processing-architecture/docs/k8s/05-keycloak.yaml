@@ -1,0 +1,154 @@
+# KC_HOSTNAME is deliberately still "http://localhost:8090", matching
+# Docker Compose exactly - api-gateway/loan-service's application.yml
+# defaults (KEYCLOAK_ISSUER_URI, KEYCLOAK_JWK_SET_URI) already assume that
+# split (issuer stamped as the host-facing URL a test client uses via
+# port-forward; JWKS fetched over the in-cluster Service address). Keeping
+# it identical means zero extra env var overrides are needed on either app
+# deployment for this to work.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: loan
+data:
+  realm-export.json: |
+    {
+      "realm": "loan-platform",
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "roles": {
+        "realm": [
+          { "name": "loan-officer", "description": "Can create and view loans" },
+          { "name": "loan-admin", "description": "Can approve/override loan decisions" }
+        ]
+      },
+      "requiredActions": [
+        { "alias": "CONFIGURE_TOTP", "name": "Configure OTP", "providerId": "CONFIGURE_TOTP", "enabled": true, "defaultAction": false, "priority": 10 },
+        { "alias": "UPDATE_PASSWORD", "name": "Update Password", "providerId": "UPDATE_PASSWORD", "enabled": true, "defaultAction": false, "priority": 30 },
+        { "alias": "UPDATE_PROFILE", "name": "Update Profile", "providerId": "UPDATE_PROFILE", "enabled": true, "defaultAction": false, "priority": 40 },
+        { "alias": "VERIFY_EMAIL", "name": "Verify Email", "providerId": "VERIFY_EMAIL", "enabled": true, "defaultAction": false, "priority": 50 },
+        { "alias": "VERIFY_PROFILE", "name": "Verify Profile", "providerId": "VERIFY_PROFILE", "enabled": false, "defaultAction": false, "priority": 90 },
+        { "alias": "terms_and_conditions", "name": "Terms and Conditions", "providerId": "TERMS_AND_CONDITIONS", "enabled": false, "defaultAction": false, "priority": 20 },
+        { "alias": "update_user_locale", "name": "Update User Locale", "providerId": "update_user_locale", "enabled": true, "defaultAction": false, "priority": 1000 }
+      ],
+      "clients": [
+        {
+          "clientId": "api-gateway",
+          "publicClient": false,
+          "secret": "changeit-in-non-dev",
+          "protocol": "openid-connect",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["http://localhost:8085/*"],
+          "protocolMappers": [
+            {
+              "name": "tenant-attribute-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "config": {
+                "user.attribute": "tenant",
+                "claim.name": "tenant",
+                "jsonType.label": "String",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            },
+            {
+              "name": "realm-roles-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-realm-role-mapper",
+              "config": {
+                "claim.name": "roles",
+                "jsonType.label": "String",
+                "multivalued": "true",
+                "access.token.claim": "true",
+                "id.token.claim": "true"
+              }
+            }
+          ]
+        },
+        { "clientId": "loan-service", "bearerOnly": true, "protocol": "openid-connect" }
+      ],
+      "users": [
+        {
+          "username": "alice",
+          "enabled": true,
+          "credentials": [{ "type": "password", "value": "alice123", "temporary": false }],
+          "attributes": { "tenant": ["tenant-a"] },
+          "realmRoles": ["loan-officer"]
+        },
+        {
+          "username": "bob",
+          "enabled": true,
+          "credentials": [{ "type": "password", "value": "bob123", "temporary": false }],
+          "attributes": { "tenant": ["tenant-b"] },
+          "realmRoles": ["loan-officer", "loan-admin"]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: loan
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      serviceAccountName: keycloak
+      automountServiceAccountToken: false
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.7.1
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: keycloak-admin, key: KEYCLOAK_ADMIN_PASSWORD } }
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HOSTNAME
+              value: "http://localhost:8090"
+            # See docker-compose.yml for the full story: KC_HEALTH_ENABLED
+            # is required, and moves health checks to a separate management
+            # port (9000) once set - both found by reproducing the failure
+            # directly, not from documentation.
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          ports:
+            - { containerPort: 8080 }
+            - { containerPort: 9000 }
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 9000 }
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 1024Mi }
+      volumes:
+        - name: realm
+          configMap: { name: keycloak-realm }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: loan
+spec:
+  selector: { app: keycloak }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
+    - { name: management, port: 9000, targetPort: 9000 }
